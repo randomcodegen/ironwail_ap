@@ -1139,6 +1139,7 @@ Player character actions
 ================
 */
 extern float ap_giveallkills;
+qboolean player_dead = 0;
 void SV_Physics_Client (edict_t	*ent, int num)
 {
 	qboolean wasunderwater, forceunderwater;
@@ -1389,11 +1390,11 @@ void SV_Physics_Client (edict_t	*ent, int num)
 			SV_StartSound (sv_player, 0, "player/pain2.wav", 255, 1);
 			sv_player->v.health = 20;
 		}
-		if (sv_player->v.health <= 0) {
+		if (sv_player->v.health <= 0 && !player_dead) {
 			// player died, send deathlink
-			if (!AP_DeathLinkPending () && ap_fresh_map == 0) 
+			if (!AP_DeathLinkPending ()) 
 				AP_DeathLinkSend ();
-				ap_fresh_map = 1;
+			player_dead = 1;
 		}
 		
 		//TODO: sv_autoload 0 does nothing :(
@@ -1401,7 +1402,12 @@ void SV_Physics_Client (edict_t	*ent, int num)
 			Cbuf_AddText ("impulse 237\n");
 			AP_DeathLinkClear ();
 			ap_fresh_map = 1;
+			// dont trigger dl, this death was sent by somebody else
 		}
+
+		// reset deathstate if player is alive again
+		if (sv_player->v.health > 0)
+			player_dead = 0;
 		// check if we have killed shub and send the changelevel item
 		if (CL_InCutscene () && !strcmp (sv.name, "end")) {
 			AP_SendExit (sv.name);
