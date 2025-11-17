@@ -1051,6 +1051,7 @@ static void GetGameSummary (summary_t *s)
 				if (!strncmp ("monster", PR_GetString (ent->v.classname), 7) && ent->v.health > 0 && ent->v.modelindex != 0)
 					all_kills = 0;
 			}
+			if (ap_giveallkills == 1.0) all_kills = 1;
 
 			if (qcvm->num_edicts > 0 && all_kills) {
 				const char* suffix = "all_kills";
@@ -1061,11 +1062,10 @@ static void GetGameSummary (summary_t *s)
 				}
 				uint64_t loc_hash = generate_hash (999, 999, 999, combined_string);
 
-				/*if (ap_giveallkills == 1.0) AP_CheckLocation (loc_hash, "items");
-				else*/ 
+				
 				if (!AP_DEBUG_SPAWN) AP_CheckLocation (loc_hash, "items");
 				
-				//ap_giveallkills = 0.0;
+				ap_giveallkills = 0;
 			}
 
 			PR_SwitchQCVM (NULL);

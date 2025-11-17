@@ -1138,6 +1138,7 @@ SV_Physics_Client
 Player character actions
 ================
 */
+extern float ap_giveallkills;
 void SV_Physics_Client (edict_t	*ent, int num)
 {
 	qboolean wasunderwater, forceunderwater;
@@ -1390,7 +1391,9 @@ void SV_Physics_Client (edict_t	*ent, int num)
 		}
 		if (sv_player->v.health <= 0) {
 			// player died, send deathlink
-			if (!AP_DeathLinkPending ()) AP_DeathLinkSend ();
+			if (!AP_DeathLinkPending () && ap_fresh_map == 0) 
+				AP_DeathLinkSend ();
+				ap_fresh_map = 1;
 		}
 		
 		//TODO: sv_autoload 0 does nothing :(
@@ -1400,8 +1403,11 @@ void SV_Physics_Client (edict_t	*ent, int num)
 			ap_fresh_map = 1;
 		}
 		// check if we have killed shub and send the changelevel item
-		if (CL_InCutscene () && !strcmp (sv.name, "end"))
+		if (CL_InCutscene () && !strcmp (sv.name, "end")) {
 			AP_SendExit (sv.name);
+			// also fix killcount for this map
+			ap_giveallkills = 1;
+		}
 		else if (!AP_DEBUG_SPAWN && !strcmp (ap_basegame, "hipnotic") && CL_InCutscene () && !strcmp (sv.name, "hipend"))
 			AP_SendExit (sv.name);
 		else if (!AP_DEBUG_SPAWN && !strcmp (ap_basegame, "rogue") && cl.intermission && !strcmp (sv.name, "r2m8"))

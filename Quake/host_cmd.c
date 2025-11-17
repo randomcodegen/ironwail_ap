@@ -3165,8 +3165,17 @@ static void Host_Spawn_f (void)
 	MSG_WriteByte (&host_client->message, STAT_TOTALSECRETS);
 	MSG_WriteLong (&host_client->message, pr_global_struct->total_secrets);
 
+	// [ap] dynamically calculate max kills when player joins/loads
+	int total_killcount = 0;
+	for (int i = 0; i < qcvm->num_edicts; i++)
+	{
+		ent = EDICT_NUM (i);
+		if (!strncmp ("monster", PR_GetString (ent->v.classname), 7) && ent->v.modelindex != 0)
+			total_killcount += 1;
+	}
 	MSG_WriteByte (&host_client->message, svc_updatestat);
 	MSG_WriteByte (&host_client->message, STAT_TOTALMONSTERS);
+	pr_global_struct->total_monsters = total_killcount;
 	MSG_WriteLong (&host_client->message, pr_global_struct->total_monsters);
 
 	MSG_WriteByte (&host_client->message, svc_updatestat);
