@@ -1515,6 +1515,8 @@ static void R_ShowBoundingBoxes (void)
 	bestdist = FLT_MAX;
 	for (i=1, ed=NEXT_EDICT(qcvm->edicts) ; i<qcvm->num_edicts ; i++, ed=NEXT_EDICT(ed))
 	{
+		const char *classname;
+
 		if (ed == sv_player || ed->free)
 			continue; // don't draw player's own bbox or freed edicts
 
@@ -1523,20 +1525,6 @@ static void R_ShowBoundingBoxes (void)
 
 		if (r_showbboxes_health.value && (ed->v.health <= 0) == (r_showbboxes_health.value > 0))
 			continue;
-
-		//[ap] dont show "removed" item/weapon edicts
-		if (((ed->v.modelindex == 0 && strncmp (PR_GetString (ed->v.classname), "trigger_", 8)) || (str_return_numeric_state (PR_GetString (ed->v.netname)) & 1)) && !AP_DEBUG)
-			continue;
-		else if (!strcmp (PR_GetString (ed->v.classname), "trigger_secret")) {
-			uint64_t loc_hash = generate_hash (ed->v.absmax[0], ed->v.absmax[1], ed->v.absmax[2], PR_GetString (ed->v.classname));
-			if (ap_is_edict_collected (loc_hash, "secrets"))
-				continue;
-		}
-		else if (!strcmp (PR_GetString (ed->v.classname), "trigger_changelevel")) {
-			uint64_t loc_hash = generate_hash (ed->v.absmax[0], ed->v.absmax[1], ed->v.absmax[2], PR_GetString (ed->v.classname));
-			if (ap_is_edict_collected (loc_hash, "exits"))
-				continue;
-		}
 
 		// Compute bounding box (16 units wide for point entities)
 		extend = VectorCompare (ed->v.mins, ed->v.maxs) ? 8.f : 0.f;
@@ -1563,6 +1551,23 @@ static void R_ShowBoundingBoxes (void)
 					SV_BoxInPVS (ed->v.absmin, ed->v.absmax, pvs, sv.worldmodel->nodes)
 			;
 			if (!inpvs)
+				continue;
+		}
+
+		classname = PR_GetString (ed->v.classname);
+		//[ap] dont show "removed" item/weapon edicts
+		if (((ed->v.modelindex == 0 && strncmp (classname, "trigger_", 8)) || (str_return_numeric_state (PR_GetString (ed->v.netname)) & 1)) && !AP_DEBUG)
+			continue;
+		else if (!strcmp (classname, "trigger_secret"))
+		{
+			uint64_t loc_hash = generate_hash (ed->v.absmax[0], ed->v.absmax[1], ed->v.absmax[2], classname);
+			if (ap_is_edict_collected (loc_hash, "secrets"))
+				continue;
+		}
+		else if (!strcmp (classname, "trigger_changelevel"))
+		{
+			uint64_t loc_hash = generate_hash (ed->v.absmax[0], ed->v.absmax[1], ed->v.absmax[2], classname);
+			if (ap_is_edict_collected (loc_hash, "exits"))
 				continue;
 		}
 
@@ -1687,24 +1692,25 @@ static void R_ShowBoundingBoxes (void)
 		}
 		else
 		{
-			// [ap] check if loc was hinted
-			// if yes, we change color to green
-			uint64_t loc_hash;
-			if (!strcmp (PR_GetString (ed->v.classname), "item_shells") || !strcmp (PR_GetString (ed->v.classname), "item_spikes")
-				|| !strcmp (PR_GetString (ed->v.classname), "item_rockets") || !strcmp (PR_GetString (ed->v.classname), "item_cells")
-				|| !strcmp (PR_GetString (ed->v.classname), "item_health"))
+			const char* classname = PR_GetString (ed->v.classname);
+			if ((ap_highlighthinted.value || AP_DEBUG)
+				&& (!strncmp (classname, "item_", 5) || !strncmp (classname, "weapon_", 7)))
 			{
-				loc_hash = generate_hash (ed->baseline.origin[0] - 16, ed->baseline.origin[1] - 16, ed->baseline.origin[2], PR_GetString (ed->v.classname));
-			}
-			else
-				loc_hash = generate_hash (ed->baseline.origin[0], ed->baseline.origin[1], ed->baseline.origin[2], PR_GetString (ed->v.classname));
-			
-			if ( ap_highlighthinted.value && (AP_IsLocHinted (loc_hash, "items"))) color = 0x7F00FF00;
+				uint64_t loc_hash;
+				if (!strcmp (classname, "item_shells") || !strcmp (classname, "item_spikes")
+					|| !strcmp (classname, "item_rockets") || !strcmp (classname, "item_cells")
+					|| !strcmp (classname, "item_health"))
+				{
+					loc_hash = generate_hash (ed->baseline.origin[0] - 16, ed->baseline.origin[1] - 16, ed->baseline.origin[2], classname);
+				}
+				else
+					loc_hash = generate_hash (ed->baseline.origin[0], ed->baseline.origin[1], ed->baseline.origin[2], classname);
 
-			char* ap_loc_name = edict_get_loc_name (loc_hash, "items");
-			if (AP_DEBUG && !AP_DEBUG_SPAWN && !strcmp (ap_loc_name, "") && (!strncmp (PR_GetString (ed->v.classname), "item_", 5) || !strncmp (PR_GetString (ed->v.classname), "weapon_", 7))) 
-				color = 0x7F00FF00;
-				//Con_SafePrintf ("Missing location %s\n", PR_GetString (ed->v.classname));
+				if (ap_highlighthinted.value && AP_IsLocHinted (loc_hash, "items"))
+					color = 0x7F00FF00;
+				if (AP_DEBUG && !AP_DEBUG_SPAWN && !strcmp (edict_get_loc_name (loc_hash, "items"), ""))
+					color = 0x7F00FF00;
+			}
 			
 			if ( AP_DEBUG && str_return_numeric_state (PR_GetString (ed->v.netname)) & 2) color = 0x7F5c5c00;
 			//box entity

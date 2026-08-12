@@ -2052,6 +2052,7 @@ void SV_SpawnServer (const char *server)
 		ap_fresh_map = 1;
 	}
 	ap_on_map_load (sv.name);
+	SV_ClearAPModelCache ();
 
 	ED_LoadFromFile (sv.worldmodel->entities);
 
@@ -2067,6 +2068,7 @@ void SV_SpawnServer (const char *server)
 
 // create a baseline for more efficient communications
 	SV_CreateBaseline ();
+	SV_ClearAPModelCache ();
 
 	//johnfitz -- warn if signon buffer larger than standard server can handle
 	for (i = 0, signonsize = 0; i < sv.num_signon_buffers; i++)

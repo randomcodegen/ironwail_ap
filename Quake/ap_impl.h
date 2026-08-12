@@ -194,6 +194,7 @@ extern void ap_set_ammo_to_max ();
 // Extern AP Lib Funcs
 extern void ap_init_connection ();
 extern int AP_CheckLocation (uint64_t loc_hash, char* loc_type);
+extern ap_location_t edict_to_ap_locid (uint64_t loc_hash, char* loc_type);
 extern void AP_SendExit (char* mapname);
 extern VictoryStats AP_VictoryStats (char* victory_name);
 extern void ap_on_map_load (char* mapname);

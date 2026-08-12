@@ -1388,6 +1388,8 @@ void _Host_Frame (double time)
 			}
 			if (buf) Con_SafePrintf ("%s\n", buf);
 			else Con_SafePrintf ("%s\n", message_parts[0]);
+			free (buf);
+			ap_free_message_parts_array (message_parts);
 		}
 	}
 	host_framecount++;

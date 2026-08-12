@@ -149,7 +149,11 @@ void ap_state_free (ap_state_t* state) {
 
 	if (state->persistent) g_hash_table_destroy (state->persistent);
 	if (state->progressive) g_hash_table_destroy (state->progressive);
-	if (state->ap_item_queue) g_queue_free (state->ap_item_queue);
+	if (state->ap_item_queue) {
+		while (!g_queue_is_empty (state->ap_item_queue))
+			free (g_queue_pop_head (state->ap_item_queue));
+		g_queue_free (state->ap_item_queue);
+	}
 	if (state->dynamic_player) json_decref (state->dynamic_player);
 
 	free (state);
@@ -182,19 +186,38 @@ GHashTable* ap_automap_unlocks = NULL;
 GHashTable* ap_keys_per_level = NULL; // Status represented by keyflags
 GHashTable* ap_totalcollected_data = NULL;
 GHashTable* ap_itemcount_map = NULL;
+GHashTable* ap_location_ids = NULL;
+
+typedef struct {
+	uint64_t hash;
+	const char* map;
+	const char* type;
+} ap_location_key_t;
+
+static guint ap_location_key_hash (gconstpointer data)
+{
+	const ap_location_key_t* key = data;
+	return (guint)(key->hash ^ (key->hash >> 32)) ^ g_str_hash (key->map) ^ (g_str_hash (key->type) << 1);
+}
+
+static gboolean ap_location_key_equal (gconstpointer a, gconstpointer b)
+{
+	const ap_location_key_t* ka = a;
+	const ap_location_key_t* kb = b;
+	return ka->hash == kb->hash && !strcmp (ka->map, kb->map) && !strcmp (ka->type, kb->type);
+}
 
 int ap_received_scout_info = 0;
 
 GHashTable* ability_unlocks;
 static GString* remote_id_checksum;
 
-static void* ght_lookup_str (GHashTable* ght, char* key)
+static void* ght_lookup_str (GHashTable* ght, const char* key)
 {
-	GString* lookup = g_string_new (key);
-	if (!g_hash_table_lookup (ght, lookup)) return NULL;
-	void* result = g_hash_table_lookup (ght, lookup);
-	g_string_free (lookup, TRUE);
-	return result;
+	if (!ght || !key)
+		return NULL;
+	GString lookup = {(gchar*)key, strlen (key), strlen (key) + 1};
+	return g_hash_table_lookup (ght, &lookup);
 }
 
 // AP static states
@@ -318,36 +341,24 @@ void json_print_sys (const char* key, json_t* j)
 // AP Funcs
 // 
 
-static char* ap_fix_start_mapname (const char* mapname) {
+static const char* ap_fix_start_mapname (const char* mapname) {
+	static char result[1024];
+
 	if (mapname == NULL || ap_basegame == NULL) {
 		return NULL;
 	}
 
 	if (strstr (mapname, "start") != NULL) {
-		size_t total_len = strlen (mapname) + 1 + strlen (ap_basegame) + 1;
-		char* result = (char*)malloc (total_len * sizeof (char));
-		if (result) {
-			strcpy (result, mapname);
-			strcat (result, "_");
-			strcat (result, ap_basegame);
-			return result;
-		}
-		return NULL;
+		snprintf (result, sizeof (result), "%s_%s", mapname, ap_basegame);
+		return result;
 	}
-	else {
-		// "start" is not present, return a copy of the original string as char*
-		size_t mapname_len = strlen (mapname) + 1;
-		char* result = (char*)malloc (mapname_len * sizeof (char));
-		if (result) {
-			strcpy (result, mapname);
-			return result;
-		}
-		return NULL;
-	}
+
+	return mapname;
 }
 
 void ap_on_map_load(char* mapname) {
 	size_t mapname_len = strlen (mapname) + 1;
+	free (ap_current_map);
 	ap_current_map = (char*)malloc (mapname_len * sizeof (char));
 	if (ap_current_map) strcpy (ap_current_map, mapname);
 	g_hash_table_remove_all (ap_itemcount_map);
@@ -393,8 +404,6 @@ static void ap_parse_levels ()
 	if (!ap_level_data) ap_level_data = g_hash_table_new (g_string_hash, g_string_equal);
 	else g_hash_table_remove_all (ap_level_data);
 
-	char* used_startmap = ap_fix_start_mapname ("start");
-
 	const char* k_ep;
 	json_t* v_ep;
 	json_t* jobj = json_object_get (ap_game_config, "episodes");
@@ -432,36 +441,19 @@ static int char_to_uint64 (const char* str, uint64_t* value)
 	return 1;
 }
 
-static char* uint64_to_char (uint64_t item_id)
+static void uint64_to_char (uint64_t item_id, char result[21])
 {
-	char* str = (char*)malloc (20 + 1); //20 derived from max uint64 number
-	if (str == NULL) {
-		ap_error ("Memory allocation failed!\n");
-		return NULL;
-	}
-	sprintf (str, "%zu", item_id);
-	return str;
+	snprintf (result, 21, "%llu", (unsigned long long)item_id);
 }
 
 ap_location_t edict_to_ap_locid (uint64_t loc_hash, char* loc_type)
 {
-	json_t* id_data = NULL;
-	char* mapname_fixed = ap_fix_start_mapname (ap_current_map);
-	json_t* level_data = json_object_get (json_object_get (json_object_get (ap_game_config, "locations"), mapname_fixed), loc_type);
-	const char* k;
-	json_t* v;
-	json_object_foreach (level_data, k, v)
-	{
-		json_t* uuid_data = json_object_get (v, "uuid");
-		uint64_t hash = 0;
-		if (char_to_uint64 (json_string_value (uuid_data), &hash)) {
-			if (hash == loc_hash) {
-				id_data = json_object_get (v, "id");
-				return safe_location_id (id_data);
-			}
-		}
-	}
-	return AP_INVALID_LOCATION;
+	const char* mapname_fixed = ap_fix_start_mapname (ap_current_map);
+	if (!mapname_fixed || !loc_type)
+		return AP_INVALID_LOCATION;
+	ap_location_key_t key = {loc_hash, mapname_fixed, loc_type};
+	gpointer id = ap_location_ids ? g_hash_table_lookup (ap_location_ids, &key) : NULL;
+	return id ? GPOINTER_TO_UINT (id) - 1 : AP_INVALID_LOCATION;
 }
 
 int AP_IsLocHinted (uint64_t loc_hash, char* loc_type)
@@ -479,27 +471,13 @@ int AP_IsLocHinted (uint64_t loc_hash, char* loc_type)
 */
 extern int ap_replace_edict (uint64_t loc_hash, char* loc_type)
 {
-	char* mapname_fixed = ap_fix_start_mapname (ap_current_map);
-	json_t* item_locations = json_object_get (json_object_get (json_object_get (ap_game_config, "locations"), mapname_fixed), loc_type);
-	//json_t* item_locations = json_object_get (ght_lookup_str (ap_level_data, ap_current_map), loc_type);
-	
 	ap_location_t item_location  = edict_to_ap_locid (loc_hash, loc_type);
 
-	if (!AP_VALID_LOCATION (item_location)) {	
+	if (!AP_VALID_LOCATION (item_location))
 		return 0;
-	}
-
-	const char* k_item;
-	json_t* v_item;
-	json_object_foreach (item_locations, k_item, v_item) {
-		uint64_t item_id = json_integer_value (json_object_get (v_item, "id"));
-		if (item_id == item_location) {
-			if (AP_LOCATION_PROGRESSION (item_location) || (AP_LOCATION_TRAP(item_location) && ap_traps_as_progressive)) 
-				return 2;
-			return 1;
-		}
-	}
-	return 0;
+	if (AP_LOCATION_PROGRESSION (item_location) || (AP_LOCATION_TRAP (item_location) && ap_traps_as_progressive))
+		return 2;
+	return 1;
 }
 
 /*
@@ -528,12 +506,9 @@ void ap_save_totalcollected (uint16_t* collected, uint16_t* total, char* mapname
 
 VictoryStats* ap_get_totalcollected (const char* mapname, char* loc_type)
 {
-	VictoryStats* stats = NULL;	
-	GString* gs_key = g_string_new (mapname);
-	g_string_append (gs_key, loc_type);
-
-	stats = g_hash_table_lookup (ap_totalcollected_data, gs_key);
-	return stats;
+	char key[1024];
+	snprintf (key, sizeof (key), "%s%s", mapname, loc_type);
+	return ght_lookup_str (ap_totalcollected_data, key);
 }
 
 void ap_save_itemcount (uint64_t loc_hash, uint16_t in_count) {
@@ -554,7 +529,7 @@ void ap_remaining_items (uint16_t* collected, uint16_t* total, char* mapname)
 {
 	*total = 0;
 	*collected = 0;
-	char* mapname_fixed = ap_fix_start_mapname (mapname);
+	const char* mapname_fixed = ap_fix_start_mapname (mapname);
 	json_t* level_data = json_object_get (json_object_get (json_object_get (ap_game_config, "locations"), mapname_fixed), "items");
 	const char* k_itemkey;
 	json_t* v_itemdata;
@@ -574,7 +549,7 @@ void ap_remaining_secrets (uint16_t* collected, uint16_t* total, char* mapname)
 {
 	*total = 0;
 	*collected = 0;
-	char* mapname_fixed = ap_fix_start_mapname (mapname);
+	const char* mapname_fixed = ap_fix_start_mapname (mapname);
 	json_t* level_data = json_object_get (json_object_get (json_object_get (ap_game_config, "locations"), mapname_fixed), "secrets");
 	const char* k_itemkey;
 	json_t* v_itemdata;
@@ -595,7 +570,7 @@ void ap_remaining_exits (uint16_t* collected, uint16_t* total, char* mapname)
 	if (!strncmp (mapname, "start", 5)) mapname = "start";
 	*total = 0;
 	*collected = 0;
-	char* mapname_fixed = ap_fix_start_mapname (mapname);
+	const char* mapname_fixed = ap_fix_start_mapname (mapname);
 	json_t* level_data = json_object_get (json_object_get (json_object_get (ap_game_config, "locations"), mapname_fixed), "exits");
 	const char* k_itemkey;
 	json_t* v_itemdata;
@@ -716,11 +691,16 @@ uint64_t generate_hash (float f1, float f2, float f3, const char* itemname) {
 	int32_t i2 = (int32_t)floorf (f2);
 	int32_t i3 = (int32_t)floorf (f3);
 
-	GString* inp_val = g_string_new (NULL);
-	g_string_printf (inp_val, "%d_%d_%d_%s", i1, i2, i3, itemname);
-	
-	uint64_t hash = rapidhash_withSeed (inp_val->str, inp_val->len, rapidhash_seed);
+	char inp_val[1024];
+	int len = snprintf (inp_val, sizeof (inp_val), "%d_%d_%d_%s", i1, i2, i3, itemname);
 
+	if (len >= 0 && len < (int)sizeof (inp_val))
+		return rapidhash_withSeed (inp_val, len, rapidhash_seed);
+
+	GString* fallback = g_string_new (NULL);
+	g_string_printf (fallback, "%d_%d_%d_%s", i1, i2, i3, itemname);
+	uint64_t hash = rapidhash_withSeed (fallback->str, fallback->len, rapidhash_seed);
+	g_string_free (fallback, TRUE);
 	return hash;
 }
 
@@ -810,7 +790,8 @@ void AP_ItemReceived (uint64_t item_id, int slot, bool notify)
 
 void AP_ClearAllItems ()
 {
-	g_queue_clear (ap_game_state->ap_item_queue);
+	while (!g_queue_is_empty (ap_game_state->ap_item_queue))
+		uint64t_bool_struct_free (g_queue_pop_head (ap_game_state->ap_item_queue));
 	g_hash_table_remove_all (ap_game_state->persistent);
 }
 
@@ -849,7 +830,7 @@ int AP_CheckLocation (uint64_t loc_hash, char* loc_type)
 void AP_SendExit (char* mapname)
 {
 	if (AP_DEBUG_SPAWN) return;
-	char* mapname_fixed = ap_fix_start_mapname (mapname);
+	const char* mapname_fixed = ap_fix_start_mapname (mapname);
 	json_t* level_data =  json_object_get (json_object_get (json_object_get (ap_game_config, "locations"), mapname), "exits");
 	const char* k_itemkey;
 	json_t* v_itemdata;
@@ -1082,6 +1063,7 @@ void AP_ProcessMessages ()
 		}
 		//g_queue_push_tail (ap_message_queue, print_msg->str);
 		g_queue_push_tail (ap_message_queue, message_parts);
+		g_string_free (print_msg, TRUE);
 
 		AP_ClearLatestMessage ();
 	}
@@ -1167,14 +1149,14 @@ char* edict_get_loc_name (uint64_t loc_hash, char* loc_type)
 */
 static void ap_get_item (ap_net_id_t item_id, bool silent, bool is_new)
 {
+	char id_string[21];
 	json_t* item_info = g_hash_table_lookup (ap_item_info, &item_id);
 	if (!item_info) return;
 	//json_print_sys ("item_info", item_info);
 	// Check if we have a dynamic override for the item in our seed slot data
-	GString* gs_key = g_string_new ("dynamic");
-	json_t* dynamic_info = g_hash_table_lookup (ap_game_settings, gs_key);
+	json_t* dynamic_info = ght_lookup_str (ap_game_settings, "dynamic");
 
-	char* id_string = uint64_to_char (item_id);
+	uint64_to_char (item_id, id_string);
 	if (dynamic_info) {
 		if (json_object_get (dynamic_info, id_string) != NULL)
 			item_info = json_object_get (dynamic_info, id_string);
@@ -1184,18 +1166,24 @@ static void ap_get_item (ap_net_id_t item_id, bool silent, bool is_new)
 	// Store counts for stateful items
 	if (is_new && json_boolean_value (json_object_get (item_info, "persistent")))
 	{
-		uint16_t* count = malloc (sizeof (uint16_t));
-		*count = 0;
-		ap_net_id_t* key = malloc (sizeof (ap_net_id_t));
-		if (key) *key = item_id;
-		if (AP_HasItem (item_id)) {
-			count = (uint16_t*)g_hash_table_lookup (ap_game_state->persistent, &item_id);
+		uint16_t* count = g_hash_table_lookup (ap_game_state->persistent, &item_id);
+		if (!count)
+		{
+			ap_net_id_t* key = malloc (sizeof (*key));
+			count = calloc (1, sizeof (*count));
+			if (!key || !count)
+			{
+				free (key);
+				free (count);
+				return;
+			}
+			*key = item_id;
+			g_hash_table_insert (ap_game_state->persistent, key, count);
 		}
 		*count += 1;
 
 		if (json_integer_value (json_object_get (item_info, "unique")))
 			*count = 1;
-		g_hash_table_insert (ap_game_state->persistent, key, count);
 	}
 
 	const char* item_type = json_string_value(json_object_get (item_info, "type"));
@@ -1225,8 +1213,11 @@ static void ap_get_item (ap_net_id_t item_id, bool silent, bool is_new)
 		uint64_t flags = json_integer_value (json_object_get (item_info, "flags"));
 		// check if key is present
 		uint64_t* val = g_hash_table_lookup (ap_keys_per_level, gs_key);
-		if (val) 
+		if (val)
+		{
 			*val |= flags;
+			g_string_free (gs_key, TRUE);
+		}
 		else {
 			uint64_t* new_val =  (uint64_t*)malloc (sizeof (uint64_t));
 			*new_val = 0 | flags;
@@ -1297,7 +1288,7 @@ static void ap_get_item (ap_net_id_t item_id, bool silent, bool is_new)
 		// apply mult factor for health and armor
 		json_t* factor_obj = json_object_get (item_info, "factor");
 		if (factor_obj)
-			factor = json_real_value (factor_obj);
+			factor = json_number_value (factor_obj);
 		capacity *= factor;
 		// round down capacity and apply
 		int rounded_capacity = (int)floor (capacity);
@@ -1312,7 +1303,7 @@ static void ap_get_item (ap_net_id_t item_id, bool silent, bool is_new)
 		// apply mult factor for health and armor
 		json_t* factor_obj = json_object_get (item_info, "factor");
 		if (factor_obj)
-			factor = json_real_value (factor_obj);
+			factor = json_number_value (factor_obj);
 		capacity *= factor;
 		// round down capacity and apply
 		int rounded_capacity = (int)floor (capacity);
@@ -1328,7 +1319,7 @@ static void ap_get_item (ap_net_id_t item_id, bool silent, bool is_new)
 	}
 	else if (!strcmp (item_type, "trap") && !silent) {
 		json_t* traps_obj = json_object_get (ap_game_state->dynamic_player, "traps");
-		json_t* trap_state = json_object_get (traps_obj, uint64_to_char(item_id));
+		json_t* trap_state = json_object_get (traps_obj, id_string);
 
 		if (!trap_state)
 		{
@@ -1339,7 +1330,7 @@ static void ap_get_item (ap_net_id_t item_id, bool silent, bool is_new)
 			json_object_set (trap_state, "remaining", json_integer (0));
 			json_object_set (trap_state, "grace", json_integer (0));
 			
-			json_object_set (traps_obj, uint64_to_char (item_id), trap_state);
+			json_object_set (traps_obj, id_string, trap_state);
 		}
 		else
 		{
@@ -1390,6 +1381,7 @@ void ap_handle_trap (json_t* trap_info, bool triggered) {
 		char** message_parts = NULL;
 		message_parts = create_message_parts_array (msg->str, NULL, NULL, NULL, NULL, NULL);
 		AP_QueueMessage (message_parts);
+		g_string_free (msg, TRUE);
 	}
 
 	// Set trap states
@@ -1424,6 +1416,7 @@ extern void ap_process_ingame_tic (void)
 	while (!g_queue_is_empty (ap_game_state->ap_item_queue)) {
 		uint64t_bool_struct* queue_item = g_queue_pop_head (ap_game_state->ap_item_queue);
 		ap_get_item (queue_item->item_id, !queue_item->notify, true);
+		uint64t_bool_struct_free (queue_item);
 	}
 
 	// Check for outstanding or active traps
@@ -1431,6 +1424,7 @@ extern void ap_process_ingame_tic (void)
 	const char* k;
 	json_t* v;
 	json_object_foreach (trap_obj, k, v) {
+		char id_string[21];
 		// Fetch relevant trap information for this trap type
 
         json_t* trap_state = v;
@@ -1438,10 +1432,9 @@ extern void ap_process_ingame_tic (void)
 		json_t* trap_info = g_hash_table_lookup (ap_item_info, &trap_id);
 
 		// Check if we have a dynamic override for the trap in our seed slot data
-		GString* gs_key = g_string_new ("dynamic");
-		json_t* dynamic_info = g_hash_table_lookup (ap_game_settings, gs_key);
+		json_t* dynamic_info = ght_lookup_str (ap_game_settings, "dynamic");
 
-		char* id_string = uint64_to_char (trap_id);
+		uint64_to_char (trap_id, id_string);
 		if (dynamic_info) {
 			if (json_object_get (dynamic_info, id_string) != NULL)
 				trap_info = json_object_get (dynamic_info, id_string);
@@ -1531,30 +1524,34 @@ extern void ap_process_ingame_tic (void)
 // runs in the main loop
 extern void ap_process_global_tic (void)
 {
+	guint queued_items;
+
 	if (ap_global_state != AP_INITIALIZED) return;
 
-	// Check for items in our queue to process
-	GQueue* temp_queue = g_queue_new ();
-	while (!g_queue_is_empty (ap_game_state->ap_item_queue)) {
+	// Process each queued item once, leaving in-game-only items queued in place.
+	queued_items = g_queue_get_length (ap_game_state->ap_item_queue);
+	while (queued_items--) {
 		uint64t_bool_struct* queue_item = g_queue_pop_head (ap_game_state->ap_item_queue);
 		// Check if the item can be processed in the global loop
 		json_t* item_info = g_hash_table_lookup (ap_item_info, &queue_item->item_id);
-		if (!item_info) return;
+		if (!item_info) {
+			uint64t_bool_struct_free (queue_item);
+			continue;
+		}
 
 		// throw away temp boosts when not ingame
 		const char* item_type = json_string_value (json_object_get (item_info, "type"));
 		if (!ap_ingame && (!strcmp (item_type, "health") || !strcmp (item_type, "armor"))) {
-			// pass
+			uint64t_bool_struct_free (queue_item);
 		}
 		else if (!strcmp(item_type, "map") || !strcmp (item_type, "trap") || !strcmp (item_type, "key") || !strcmp (item_type, "goal")){
-				ap_get_item (queue_item->item_id, !queue_item->notify, true);
+			ap_get_item (queue_item->item_id, !queue_item->notify, true);
+			uint64t_bool_struct_free (queue_item);
 		}
 		else {
-			g_queue_push_tail (temp_queue, queue_item);
+			g_queue_push_tail (ap_game_state->ap_item_queue, queue_item);
 		}
 	}
-
-	ap_game_state->ap_item_queue = temp_queue;
 
 	AP_SyncProgress ();
 
@@ -1665,16 +1662,14 @@ int ap_can_door()
 int ap_can_automap (char* mapname)
 {	
 	if ((AP_DEBUG || AP_DEBUG_SPAWN)) return 1;
-	char* mapname_fixed = ap_fix_start_mapname (mapname);
+	const char* mapname_fixed = ap_fix_start_mapname (mapname);
 	if (ght_lookup_str (ap_automap_unlocks, mapname_fixed)) return 1;
 	return 0;
 }
 
 uint64_t* ap_get_key_flags (const char* mapname)
 {
-	GString* gs_key = g_string_new (mapname);
-	// check if key is present
-	uint64_t* val = g_hash_table_lookup (ap_keys_per_level, gs_key);
+	uint64_t* val = ght_lookup_str (ap_keys_per_level, mapname);
 	if (val) return val;
 	else return 0;
 }
@@ -1716,14 +1711,14 @@ int ap_can_shootswitch ()
 
 int ap_is_level_used (char* mapname) {
 	if (AP_DEBUG_SPAWN) return 1;
-	char* mapname_fixed = ap_fix_start_mapname (mapname);
+	const char* mapname_fixed = ap_fix_start_mapname (mapname);
 	if (ght_lookup_str (ap_used_levels, mapname_fixed)) return 1;
 	return 0;
 }
 
 int ap_is_level_unlocked (char* mapname) {
 	if (AP_DEBUG_SPAWN) return 1;
-	char* mapname_fixed = ap_fix_start_mapname (mapname);
+	const char* mapname_fixed = ap_fix_start_mapname (mapname);
 	if (ght_lookup_str (ap_unlocked_levels, mapname_fixed)) return 1;
 	return 0;
 }
@@ -1764,6 +1759,10 @@ static void init_item_table (json_t* items)
 static void init_location_table (json_t* locations)
 {
 	memset (ap_locations, 0, AP_MAX_LOCATION * sizeof (ap_location_state_t));
+	if (!ap_location_ids)
+		ap_location_ids = g_hash_table_new_full (ap_location_key_hash, ap_location_key_equal, free, NULL);
+	else
+		g_hash_table_remove_all (ap_location_ids);
 
 	// Iterate through the game config data to set the relevant flags for all known locations
 	const char* k_level;
@@ -1774,6 +1773,23 @@ static void init_location_table (json_t* locations)
 		json_t* v_loctype;
 		json_object_foreach (v_level, k_loctype, v_loctype)
 		{
+			const char* k_location;
+			json_t* v_location;
+			json_object_foreach (v_loctype, k_location, v_location)
+			{
+				uint64_t hash;
+				ap_location_t id = safe_location_id (json_object_get (v_location, "id"));
+				if (char_to_uint64 (json_string_value (json_object_get (v_location, "uuid")), &hash))
+				{
+					ap_location_key_t* key = malloc (sizeof (*key));
+					if (key)
+					{
+						*key = (ap_location_key_t){hash, k_level, k_loctype};
+						g_hash_table_insert (ap_location_ids, key, GUINT_TO_POINTER (id + 1));
+					}
+				}
+			}
+
 			if (!strcmp (k_loctype, "items"))
 			{
 				const char* k_itemkey;

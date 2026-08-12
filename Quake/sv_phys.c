@@ -140,73 +140,125 @@ int str_return_numeric_state (const char* item_string) {
 	return 0;
 }
 
-static void SV_AdjustAPModels (void)
+typedef struct
+{
+	edict_t* edict;
+	string_t classname;
+	ap_location_t location;
+} ap_model_edict_t;
+
+static ap_model_edict_t* ap_model_edicts;
+static qboolean ap_model_cache_ready;
+static int ap_logo_model;
+static string_t ap_logo_string;
+
+void SV_ClearAPModelCache (void)
+{
+	VEC_CLEAR (ap_model_edicts);
+	ap_model_cache_ready = false;
+	ap_logo_model = 0;
+	ap_logo_string = 0;
+}
+
+static void SV_BuildAPModelCache (void)
 {
 	int			e;
 	edict_t* check;
 
-	// check edicts for models that need to be adjusted
+	VEC_CLEAR (ap_model_edicts);
 	check = NEXT_EDICT (qcvm->edicts);
 	for (e = 1; e < qcvm->num_edicts; e++, check = NEXT_EDICT (check))
 	{
-		if (!strncmp (PR_GetString (check->v.classname), "item_", 5) || !strncmp (PR_GetString (check->v.classname), "weapon_", 7))
+		const char* classname = PR_GetString (check->v.classname);
+		if (!strncmp (classname, "item_", 5) || !strncmp (classname, "weapon_", 7))
 		{
-		
 			uint64_t loc_hash = 0;
-			if (!strcmp (PR_GetString (check->v.classname), "item_shells") || !strcmp (PR_GetString (check->v.classname), "item_spikes")
-				|| !strcmp (PR_GetString (check->v.classname), "item_rockets") || !strcmp (PR_GetString (check->v.classname), "item_cells")
-				|| !strcmp (PR_GetString (check->v.classname), "item_health"))
+			if (!strcmp (classname, "item_shells") || !strcmp (classname, "item_spikes")
+				|| !strcmp (classname, "item_rockets") || !strcmp (classname, "item_cells")
+				|| !strcmp (classname, "item_health"))
 			{
-				loc_hash = generate_hash (check->baseline.origin[0] - 16, check->baseline.origin[1] - 16, check->baseline.origin[2], PR_GetString (check->v.classname));
+				loc_hash = generate_hash (check->baseline.origin[0] - 16, check->baseline.origin[1] - 16, check->baseline.origin[2], classname);
 			}
 			else
-				loc_hash = generate_hash (check->baseline.origin[0], check->baseline.origin[1], check->baseline.origin[2], PR_GetString (check->v.classname));
-			
-			// make sure item and weapon spawns without modelindex are not interactable
-			if (check->v.modelindex == 0 && check->v.solid != 0)
-				check->v.solid = 0;
+				loc_hash = generate_hash (check->baseline.origin[0], check->baseline.origin[1], check->baseline.origin[2], classname);
 
-			if (AP_IsLocChecked (loc_hash, "items") || ((str_return_numeric_state (PR_GetString (check->v.netname)) & 1))) {
-				const char* netname = PR_GetString (check->v.netname);
-				if (!(str_return_numeric_state (PR_GetString (check->v.netname)) & 1)) {
-					// need to set checked status in netname
-					check->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 0));
-				}
-				if (ED_HasTargets (check)) {
-					// adjust ap-white models that were touched recently
-					if (check->v.solid == 0 && check->v.modelindex != 0) check->v.modelindex = 0;
-					if (fabsf (last_trigger_change - qcvm->time) > AP_EDICT_RESPAWN_TIMER)
+			ap_model_edict_t cached = {check, check->v.classname, edict_to_ap_locid (loc_hash, "items")};
+			VEC_PUSH (ap_model_edicts, cached);
+		}
+	}
+	ap_logo_model = SV_ModelIndex ("progs/ap-logo-white.mdl");
+	ap_logo_string = PR_SetEngineString ("progs/ap-logo-white.mdl");
+	ap_model_cache_ready = true;
+}
+
+static void SV_AdjustAPModels (void)
+{
+	if (!ap_model_cache_ready)
+		SV_BuildAPModelCache ();
+
+	for (size_t e = 0; e < VEC_SIZE (ap_model_edicts); e++)
+	{
+		ap_model_edict_t* cached = &ap_model_edicts[e];
+		edict_t* check = cached->edict;
+		const char* netname;
+		int state;
+
+		if (check->free || check->v.classname != cached->classname)
+			continue;
+
+		// make sure item and weapon spawns without modelindex are not interactable
+		if (check->v.modelindex == 0 && check->v.solid != 0)
+			check->v.solid = 0;
+
+		netname = PR_GetString (check->v.netname);
+		state = str_return_numeric_state (netname);
+		if (AP_LOCATION_CHECKED (cached->location) || (state & 1))
+		{
+			if (!(state & 1))
+			{
+				// need to set checked status in netname
+				check->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 0));
+			}
+			if (ED_HasTargets (check))
+			{
+				// adjust ap-white models that were touched recently
+				if (check->v.solid == 0 && check->v.modelindex != 0)
+					check->v.modelindex = 0;
+				if (fabsf (last_trigger_change - qcvm->time) > AP_EDICT_RESPAWN_TIMER)
+				{
+					if (!(state & 2))
 					{
-						if (!(str_return_numeric_state (netname) & 2))
+						// model not set, init correct model
+						check->v.solid = SOLID_TRIGGER;
+						check->v.modelindex = ap_logo_model;
+						check->v.model = ap_logo_string;
+						check->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 1));
+						last_trigger_change = qcvm->time;
+					}
+					else if (state & 3)
+					{
+						// model is init'd, check if we need to respawn
+						if (check->v.modelindex != ap_logo_model && check->v.solid != SOLID_TRIGGER)
 						{
-							// model not set, init correct model
 							check->v.solid = SOLID_TRIGGER;
-							check->v.modelindex = SV_ModelIndex ("progs/ap-logo-white.mdl");
-							check->v.model = PR_SetEngineString ("progs/ap-logo-white.mdl");
-							check->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 1));
+							check->v.modelindex = ap_logo_model;
+							check->v.model = ap_logo_string;
 							last_trigger_change = qcvm->time;
 						}
-						else if (str_return_numeric_state (netname) & 3) {
-							// model is init'd, check if we need to respawn
-							if (check->v.modelindex != SV_ModelIndex ("progs/ap-logo-white.mdl") && check->v.solid != SOLID_TRIGGER) {
-								check->v.solid = SOLID_TRIGGER;
-								check->v.modelindex = SV_ModelIndex ("progs/ap-logo-white.mdl");
-								check->v.model = PR_SetEngineString ("progs/ap-logo-white.mdl");
-								last_trigger_change = qcvm->time;
-							}
-						}
-					}
-					// make sure picked up items without targets get despawned
-					else if ((check->v.solid != 0 || check->v.modelindex != 0) && check->v.modelindex != SV_ModelIndex ("progs/ap-logo-white.mdl")) {
-						check->v.solid = 0;
-						check->v.modelindex = 0;
 					}
 				}
-				// checked locations without targets should be invisible, enforce
-				else if ((check->v.solid != 0 || check->v.modelindex != 0) && check->v.modelindex != SV_ModelIndex ("progs/ap-logo-white.mdl")) {
+				// make sure picked up items without targets get despawned
+				else if ((check->v.solid != 0 || check->v.modelindex != 0) && check->v.modelindex != ap_logo_model)
+				{
 					check->v.solid = 0;
 					check->v.modelindex = 0;
 				}
+			}
+			// checked locations without targets should be invisible, enforce
+			else if ((check->v.solid != 0 || check->v.modelindex != 0) && check->v.modelindex != ap_logo_model)
+			{
+				check->v.solid = 0;
+				check->v.modelindex = 0;
 			}
 		}
 	}
@@ -1204,6 +1256,8 @@ void SV_Physics_Client (edict_t	*ent, int num)
 				}
 				if (buf) Con_SafePrintf ("%s\n", buf);
 				else Con_SafePrintf ("%s\n", message_parts[0]);
+				free (buf);
+				ap_free_message_parts_array (message_parts);
 			}
 		}
 		
@@ -1216,32 +1270,26 @@ void SV_Physics_Client (edict_t	*ent, int num)
 		}
 		// check inventory uses and refresh flags
 
-		//set max ammo
-		val = GetEdictFieldValueByName (sv_player, "ap_max_shells");
-		val->_float = fmin (ap_max_ammo_arr[0], ap_max_ammo_vanilla_arr[0]);
-
-		val = GetEdictFieldValueByName (sv_player, "ap_max_nails");
-		val->_float = fmin (ap_max_ammo_arr[1], ap_max_ammo_vanilla_arr[1]);
-
-		val = GetEdictFieldValueByName (sv_player, "ap_max_rockets");
-		val->_float = fmin (ap_max_ammo_arr[2], ap_max_ammo_vanilla_arr[2]);
-
-		val = GetEdictFieldValueByName (sv_player, "ap_max_cells");
-		val->_float = fmin (ap_max_ammo_arr[3], ap_max_ammo_vanilla_arr[3]);
-
-		if (!AP_DEBUG_SPAWN && !strcmp (ap_basegame, "rogue")) {
-			val = GetEdictFieldValueByName (sv_player, "ap_max_lavanails");
-			val->_float = fmin (ap_max_ammo_arr[4], ap_max_ammo_vanilla_arr[4]);
-
-			val = GetEdictFieldValueByName (sv_player, "ap_max_multirockets");
-			val->_float = fmin (ap_max_ammo_arr[5], ap_max_ammo_vanilla_arr[5]);
-
-			val = GetEdictFieldValueByName (sv_player, "ap_max_plasma");
-			val->_float = fmin (ap_max_ammo_arr[6], ap_max_ammo_vanilla_arr[6]);
-		}
-
 		// give ammo
 		if (ap_give_ammo) {
+			val = GetEdictFieldValueByName (sv_player, "ap_max_shells");
+			val->_float = fmin (ap_max_ammo_arr[0], ap_max_ammo_vanilla_arr[0]);
+			val = GetEdictFieldValueByName (sv_player, "ap_max_nails");
+			val->_float = fmin (ap_max_ammo_arr[1], ap_max_ammo_vanilla_arr[1]);
+			val = GetEdictFieldValueByName (sv_player, "ap_max_rockets");
+			val->_float = fmin (ap_max_ammo_arr[2], ap_max_ammo_vanilla_arr[2]);
+			val = GetEdictFieldValueByName (sv_player, "ap_max_cells");
+			val->_float = fmin (ap_max_ammo_arr[3], ap_max_ammo_vanilla_arr[3]);
+
+			if (!AP_DEBUG_SPAWN && !strcmp (ap_basegame, "rogue")) {
+				val = GetEdictFieldValueByName (sv_player, "ap_max_lavanails");
+				val->_float = fmin (ap_max_ammo_arr[4], ap_max_ammo_vanilla_arr[4]);
+				val = GetEdictFieldValueByName (sv_player, "ap_max_multirockets");
+				val->_float = fmin (ap_max_ammo_arr[5], ap_max_ammo_vanilla_arr[5]);
+				val = GetEdictFieldValueByName (sv_player, "ap_max_plasma");
+				val->_float = fmin (ap_max_ammo_arr[6], ap_max_ammo_vanilla_arr[6]);
+			}
+
 			val = GetEdictFieldValueByName (sv_player, "ap_shells");
 			val->_float = ap_give_ammo_arr[0];
 			val = GetEdictFieldValueByName (sv_player, "ap_nails");
