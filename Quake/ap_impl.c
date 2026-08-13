@@ -465,6 +465,7 @@ int AP_IsLocHinted (uint64_t loc_hash, char* loc_type)
 
 /*
   Returns if a spawning edict needs to be patched or deleted
+  Replace Useful = 3
   Replace Progression = 2
   Replace = 1
   Delete = 0
@@ -477,6 +478,8 @@ extern int ap_replace_edict (uint64_t loc_hash, char* loc_type)
 		return 0;
 	if (AP_LOCATION_PROGRESSION (item_location) || (AP_LOCATION_TRAP (item_location) && ap_traps_as_progressive))
 		return 2;
+	if (AP_LOCATION_USEFUL (item_location))
+		return 3;
 	return 1;
 }
 

@@ -636,15 +636,15 @@ void CL_RelinkEntities (void)
 			//johnfitz
 		}
 		//[ap] Hooking into this to give ap items a dyn light
-		if (ent->effects & EF_BRIGHTLIGHT || !strcmp (ent->model->name, "progs/ap-logo.mdl") || !strcmp (ent->model->name, "progs/ap-logo-prog.mdl") || !strcmp (ent->model->name, "progs/ap-logo-white.mdl"))
+		if (ent->effects & EF_BRIGHTLIGHT || !strcmp (ent->model->name, "progs/q1ap_token_filler.mdl") || !strcmp (ent->model->name, "progs/q1ap_token_progressive.mdl") || !strcmp (ent->model->name, "progs/q1ap_token_useful.mdl") || !strcmp (ent->model->name, "progs/q1ap_token_white.mdl"))
 		{
-			if (!strcmp (ent->model->name, "progs/ap-logo.mdl") || !strcmp (ent->model->name, "progs/ap-logo-prog.mdl") || !strcmp (ent->model->name, "progs/ap-logo-white.mdl"))
+			if (!strcmp (ent->model->name, "progs/q1ap_token_filler.mdl") || !strcmp (ent->model->name, "progs/q1ap_token_progressive.mdl") || !strcmp (ent->model->name, "progs/q1ap_token_useful.mdl") || !strcmp (ent->model->name, "progs/q1ap_token_white.mdl"))
 			{
 				// create a dynamic light with a smaller than usual radius
 				dl = CL_AllocDlight (i);
 				VectorCopy (ent->origin, dl->origin);
 				dl->origin[2] += 16;
-				dl->radius = 24;
+				dl->radius = 20;
 				dl->die = cl.time + 0.001;
 			}
 			else

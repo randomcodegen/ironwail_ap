@@ -274,7 +274,6 @@ void SV_UnlinkEdict (edict_t *ent)
 	ent->area.prev = ent->area.next = NULL;
 }
 
-extern float last_trigger_change = 0.0f;
 /*
 ====================
 SV_AreaTriggerEdicts
@@ -335,7 +334,6 @@ SV_AreaTriggerEdicts ( edict_t *ent, areanode_t *node, edict_t **list, int *list
 					touch->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 0));
 					//touch->v.modelindex = 0;
 					//touch->v.solid = 0;
-					last_trigger_change = qcvm->time;
 					Cbuf_AddText ("bf\n");
 				}
 			}
@@ -345,11 +343,10 @@ SV_AreaTriggerEdicts ( edict_t *ent, areanode_t *node, edict_t **list, int *list
 				//Con_SafePrintf ("Skipping touch func\n");
 			}
 			// [ap] We are touching a checked location that respawned, disable on touch
-			else if (is_item_checked && touch->v.modelindex == SV_ModelIndex ("progs/ap-logo-white.mdl")) {
+			else if (is_item_checked && touch->v.modelindex == SV_ModelIndex ("progs/q1ap_token_white.mdl")) {
 				touch->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 0));
 				touch->v.modelindex = 0;
 				//touch->v.solid = 0;
-				last_trigger_change = qcvm->time;
 				Cbuf_AddText ("bf\n");
 			}
 			//Con_DPrintf("AP_LOCATION %s Touched %s (%i) \n", PR_GetString(ent->v.classname), PR_GetString(touch->v.classname), NUM_FOR_EDICT(touch), touch->v.origin[0], touch->v.origin[1], touch->v.origin[2]);
@@ -1036,4 +1033,3 @@ trace_t SV_Move (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int type, e
 
 	return clip.trace;
 }
-

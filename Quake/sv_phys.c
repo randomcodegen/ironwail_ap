@@ -145,6 +145,7 @@ typedef struct
 	edict_t* edict;
 	string_t classname;
 	ap_location_t location;
+	float respawn_at;
 } ap_model_edict_t;
 
 static ap_model_edict_t* ap_model_edicts;
@@ -177,17 +178,20 @@ static void SV_BuildAPModelCache (void)
 				|| !strcmp (classname, "item_rockets") || !strcmp (classname, "item_cells")
 				|| !strcmp (classname, "item_health"))
 			{
-				loc_hash = generate_hash (check->baseline.origin[0] - 16, check->baseline.origin[1] - 16, check->baseline.origin[2], classname);
+				loc_hash = generate_hash (check->v.origin[0] - 16, check->v.origin[1] - 16, check->v.origin[2], classname);
 			}
 			else
-				loc_hash = generate_hash (check->baseline.origin[0], check->baseline.origin[1], check->baseline.origin[2], classname);
+				loc_hash = generate_hash (check->v.origin[0], check->v.origin[1], check->v.origin[2], classname);
 
-			ap_model_edict_t cached = {check, check->v.classname, edict_to_ap_locid (loc_hash, "items")};
+			ap_model_edict_t cached = {check, check->v.classname, edict_to_ap_locid (loc_hash, "items"), 0};
 			VEC_PUSH (ap_model_edicts, cached);
+			if (ED_HasTargets (check) && !AP_VALID_LOCATION (cached.location))
+				Con_DPrintf ("AP respawn: no location for %s at %.0f %.0f %.0f (edict %d)\n",
+					classname, check->v.origin[0], check->v.origin[1], check->v.origin[2], e);
 		}
 	}
-	ap_logo_model = SV_ModelIndex ("progs/ap-logo-white.mdl");
-	ap_logo_string = PR_SetEngineString ("progs/ap-logo-white.mdl");
+	ap_logo_model = SV_ModelIndex ("progs/q1ap_token_white.mdl");
+	ap_logo_string = PR_SetEngineString ("progs/q1ap_token_white.mdl");
 	ap_model_cache_ready = true;
 }
 
@@ -221,37 +225,27 @@ static void SV_AdjustAPModels (void)
 			}
 			if (ED_HasTargets (check))
 			{
-				// adjust ap-white models that were touched recently
-				if (check->v.solid == 0 && check->v.modelindex != 0)
-					check->v.modelindex = 0;
-				if (fabsf (last_trigger_change - qcvm->time) > AP_EDICT_RESPAWN_TIMER)
+				if (check->v.modelindex == ap_logo_model && check->v.solid == SOLID_TRIGGER)
 				{
-					if (!(state & 2))
-					{
-						// model not set, init correct model
-						check->v.solid = SOLID_TRIGGER;
-						check->v.modelindex = ap_logo_model;
-						check->v.model = ap_logo_string;
-						check->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 1));
-						last_trigger_change = qcvm->time;
-					}
-					else if (state & 3)
-					{
-						// model is init'd, check if we need to respawn
-						if (check->v.modelindex != ap_logo_model && check->v.solid != SOLID_TRIGGER)
-						{
-							check->v.solid = SOLID_TRIGGER;
-							check->v.modelindex = ap_logo_model;
-							check->v.model = ap_logo_string;
-							last_trigger_change = qcvm->time;
-						}
-					}
+					cached->respawn_at = 0;
 				}
-				// make sure picked up items without targets get despawned
-				else if ((check->v.solid != 0 || check->v.modelindex != 0) && check->v.modelindex != ap_logo_model)
+				else if (!cached->respawn_at)
 				{
 					check->v.solid = 0;
 					check->v.modelindex = 0;
+					cached->respawn_at = qcvm->time + AP_EDICT_RESPAWN_TIMER;
+					Con_DPrintf ("AP respawn: scheduled %s (location %u, edict %d) for %.1f\n",
+						PR_GetString (check->v.classname), cached->location, NUM_FOR_EDICT (check), cached->respawn_at);
+				}
+				else if (qcvm->time >= cached->respawn_at)
+				{
+					check->v.solid = SOLID_TRIGGER;
+					check->v.modelindex = ap_logo_model;
+					check->v.model = ap_logo_string;
+					check->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 1));
+					cached->respawn_at = 0;
+					Con_DPrintf ("AP respawn: restored %s (location %u, edict %d) at %.1f\n",
+						PR_GetString (check->v.classname), cached->location, NUM_FOR_EDICT (check), qcvm->time);
 				}
 			}
 			// checked locations without targets should be invisible, enforce

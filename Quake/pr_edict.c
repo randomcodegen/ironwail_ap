@@ -1731,6 +1731,8 @@ void ED_LoadFromFile (const char *data)
 			}
 			else if (do_replace == 2) 
 				func = ED_FindFunction ("item_ap_prog");
+			else if (do_replace == 3)
+				func = ED_FindFunction ("item_ap_useful");
 			else 
 				func = ED_FindFunction ("item_ap");
 		}
@@ -1808,9 +1810,9 @@ void ED_LoadFromFile (const char *data)
 	for (int i = 0; i < remove_array_index; i++) {
 		edict_t* remove_ent = (edict_t*)remove_after[i];
 		ap_printfd ("Removing after: %s (%i) %f\n", PR_GetString (remove_ent->v.classname),NUM_FOR_EDICT (remove_ent), remove_ent->v.spawnflags);
-		/*if ((remove_ent->v.modelindex != SV_ModelIndex ("progs/ap-logo-white.mdl")) && ED_HasLinks (remove_ent)) {
+		/*if ((remove_ent->v.modelindex != SV_ModelIndex ("progs/q1ap_token_white.mdl")) && ED_HasLinks (remove_ent)) {
 			//remove_ent->v.solid = SOLID_TRIGGER;
-			//remove_ent->v.modelindex = SV_ModelIndex ("progs/ap-logo-white.mdl");
+			//remove_ent->v.modelindex = SV_ModelIndex ("progs/q1ap_token_white.mdl");
 		}
 		else*/ 
 		if (!strncmp (PR_GetString (remove_ent->v.classname), "item_", 5) || !strncmp (PR_GetString (remove_ent->v.classname), "weapon_", 7)) {

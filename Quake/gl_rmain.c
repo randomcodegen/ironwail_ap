@@ -665,8 +665,8 @@ static void R_SortEntities (void)
 		entity_t *ent = cl_visedicts[i];
 
 		// [ap] Turn white ap models translucent
-		if (!strcmp (ent->model->name, "progs/ap-logo-white.mdl"))
-			ent->alpha = 128;
+		if (!strcmp (ent->model->name, "progs/q1ap_token_white.mdl"))
+			ent->alpha = 96;
 
 		qboolean translucent = !ENTALPHA_OPAQUE (ent->alpha);
 
