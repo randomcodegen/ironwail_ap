@@ -208,7 +208,12 @@ static void SV_AdjustAPModels (void)
 		int state;
 
 		if (check->free || check->v.classname != cached->classname)
+		{
+			if (cached->respawn_at)
+				Con_DPrintf ("AP respawn: cancelled for edict %d (free=%d, classname changed=%d)\n",
+					NUM_FOR_EDICT (check), check->free, check->v.classname != cached->classname);
 			continue;
+		}
 
 		// make sure item and weapon spawns without modelindex are not interactable
 		if (check->v.modelindex == 0 && check->v.solid != 0)
@@ -216,6 +221,25 @@ static void SV_AdjustAPModels (void)
 
 		netname = PR_GetString (check->v.netname);
 		state = str_return_numeric_state (netname);
+
+		// Once scheduled, a respawn must not depend on mutable target or AP state.
+		if (cached->respawn_at)
+		{
+			if (qcvm->time >= cached->respawn_at)
+			{
+				check->v.solid = SOLID_TRIGGER;
+				check->v.modelindex = ap_logo_model;
+				check->v.model = ap_logo_string;
+				check->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 1));
+				SV_LinkEdict (check, false);
+				cached->respawn_at = 0;
+				Con_DPrintf ("AP respawn: restored %s (location %u, edict %d, model %d, leafs %d) at %.1f\n",
+					PR_GetString (check->v.classname), cached->location, NUM_FOR_EDICT (check),
+					ap_logo_model, check->num_leafs, qcvm->time);
+			}
+			continue;
+		}
+
 		if (AP_LOCATION_CHECKED (cached->location) || (state & 1))
 		{
 			if (!(state & 1))
@@ -229,23 +253,14 @@ static void SV_AdjustAPModels (void)
 				{
 					cached->respawn_at = 0;
 				}
-				else if (!cached->respawn_at)
+				else
 				{
 					check->v.solid = 0;
 					check->v.modelindex = 0;
+					SV_LinkEdict (check, false);
 					cached->respawn_at = qcvm->time + AP_EDICT_RESPAWN_TIMER;
 					Con_DPrintf ("AP respawn: scheduled %s (location %u, edict %d) for %.1f\n",
 						PR_GetString (check->v.classname), cached->location, NUM_FOR_EDICT (check), cached->respawn_at);
-				}
-				else if (qcvm->time >= cached->respawn_at)
-				{
-					check->v.solid = SOLID_TRIGGER;
-					check->v.modelindex = ap_logo_model;
-					check->v.model = ap_logo_string;
-					check->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 1));
-					cached->respawn_at = 0;
-					Con_DPrintf ("AP respawn: restored %s (location %u, edict %d) at %.1f\n",
-						PR_GetString (check->v.classname), cached->location, NUM_FOR_EDICT (check), qcvm->time);
 				}
 			}
 			// checked locations without targets should be invisible, enforce

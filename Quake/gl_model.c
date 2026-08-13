@@ -2884,6 +2884,12 @@ static void Mod_FloodFillSkin( byte *skin, int skinwidth, int skinheight )
 		return;
 	}
 
+	// A solid-color skin has no background boundary to flood from.
+	for (i = 1; i < skinwidth * skinheight && skin[i] == fillcolor; ++i)
+		;
+	if (i == skinwidth * skinheight)
+		return;
+
 	fifo[inpt].x = 0, fifo[inpt].y = 0;
 	inpt = (inpt + 1) & FLOODFILL_FIFO_MASK;
 

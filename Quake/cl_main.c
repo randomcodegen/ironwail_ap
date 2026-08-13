@@ -643,7 +643,6 @@ void CL_RelinkEntities (void)
 				// create a dynamic light with a smaller than usual radius
 				dl = CL_AllocDlight (i);
 				VectorCopy (ent->origin, dl->origin);
-				dl->origin[2] += 16;
 				dl->radius = 20;
 				dl->die = cl.time + 0.001;
 			}
