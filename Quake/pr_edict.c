@@ -1473,7 +1473,7 @@ qboolean ED_HasLinks (const edict_t* ent) {
 		for (j = 0; j < qcvm->numentityfields; j++)
 		{
 			eval_t* val = (eval_t*)((char*)&ed->v + qcvm->entityfieldofs[j]);
-			if (qcvm->entityfieldofs[i] == offsetof (entvars_t, chain) || !val->edict)
+			if (qcvm->entityfieldofs[j] == offsetof (entvars_t, chain) || !val->edict)
 				continue;
 			if (PROG_TO_EDICT (val->edict) == ent)
 				return 1;

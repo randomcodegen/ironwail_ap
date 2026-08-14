@@ -2065,6 +2065,7 @@ void SV_SpawnServer (const char *server)
 	host_frametime = 0.1;
 	SV_Physics ();
 	SV_Physics ();
+	SV_FinalizeAPModelCache ();
 
 	// create a baseline for more efficient communications
 	SV_CreateBaseline ();

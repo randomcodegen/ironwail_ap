@@ -143,13 +143,16 @@ int str_return_numeric_state (const char* item_string) {
 typedef struct
 {
 	edict_t* edict;
-	string_t classname;
+	char classname[MAX_QPATH];
 	ap_location_t location;
+	qboolean respawns;
+	qboolean respawn_classified;
 	float respawn_at;
 } ap_model_edict_t;
 
 static ap_model_edict_t* ap_model_edicts;
 static qboolean ap_model_cache_ready;
+static qboolean ap_model_cache_finalized;
 static int ap_logo_model;
 static string_t ap_logo_string;
 
@@ -157,8 +160,30 @@ void SV_ClearAPModelCache (void)
 {
 	VEC_CLEAR (ap_model_edicts);
 	ap_model_cache_ready = false;
+	ap_model_cache_finalized = false;
 	ap_logo_model = 0;
 	ap_logo_string = 0;
+}
+
+void SV_ResetAPModelRespawns (void)
+{
+	for (size_t i = 0; i < VEC_SIZE (ap_model_edicts); i++)
+	{
+		ap_model_edict_t* cached = &ap_model_edicts[i];
+		edict_t* check = cached->edict;
+		cached->respawn_at = 0;
+		cached->respawns = ED_HasLinks (check);
+		cached->respawn_classified = true;
+		if (cached->respawns
+			&& (AP_LOCATION_CHECKED (cached->location) || (str_return_numeric_state (PR_GetString (check->v.netname)) & 1))
+			&& (check->v.modelindex != ap_logo_model || check->v.solid != SOLID_TRIGGER))
+		{
+			check->v.solid = 0;
+			check->v.modelindex = 0;
+			SV_LinkEdict (check, false);
+			cached->respawn_at = qcvm->time + AP_EDICT_LOAD_RESPAWN_TIMER;
+		}
+	}
 }
 
 static void SV_BuildAPModelCache (void)
@@ -183,11 +208,11 @@ static void SV_BuildAPModelCache (void)
 			else
 				loc_hash = generate_hash (check->v.origin[0], check->v.origin[1], check->v.origin[2], classname);
 
-			ap_model_edict_t cached = {check, check->v.classname, edict_to_ap_locid (loc_hash, "items"), 0};
+			ap_model_edict_t cached = {0};
+			cached.edict = check;
+			q_strlcpy (cached.classname, classname, sizeof (cached.classname));
+			cached.location = edict_to_ap_locid (loc_hash, "items");
 			VEC_PUSH (ap_model_edicts, cached);
-			if (ED_HasTargets (check) && !AP_VALID_LOCATION (cached.location))
-				Con_DPrintf ("AP respawn: no location for %s at %.0f %.0f %.0f (edict %d)\n",
-					classname, check->v.origin[0], check->v.origin[1], check->v.origin[2], e);
 		}
 	}
 	ap_logo_model = SV_ModelIndex ("progs/q1ap_token_white.mdl");
@@ -195,10 +220,29 @@ static void SV_BuildAPModelCache (void)
 	ap_model_cache_ready = true;
 }
 
+void SV_FinalizeAPModelCache (void)
+{
+	if (!ap_model_cache_ready)
+		SV_BuildAPModelCache ();
+	for (size_t i = 0; i < VEC_SIZE (ap_model_edicts); i++)
+	{
+		ap_model_edict_t* cached = &ap_model_edicts[i];
+		cached->respawns = ED_HasLinks (cached->edict);
+		cached->respawn_classified = cached->respawns;
+		if (cached->respawns && !AP_VALID_LOCATION (cached->location))
+			Con_DPrintf ("AP respawn: no location for %s at %.0f %.0f %.0f (edict %d)\n",
+				cached->classname, cached->edict->v.origin[0], cached->edict->v.origin[1],
+				cached->edict->v.origin[2], NUM_FOR_EDICT (cached->edict));
+	}
+	ap_model_cache_finalized = true;
+}
+
 static void SV_AdjustAPModels (void)
 {
 	if (!ap_model_cache_ready)
 		SV_BuildAPModelCache ();
+	if (!ap_model_cache_finalized)
+		return;
 
 	for (size_t e = 0; e < VEC_SIZE (ap_model_edicts); e++)
 	{
@@ -207,14 +251,13 @@ static void SV_AdjustAPModels (void)
 		const char* netname;
 		int state;
 
-		if (check->free || check->v.classname != cached->classname)
+		if (check->free || strcmp (PR_GetString (check->v.classname), cached->classname))
 		{
 			if (cached->respawn_at)
 				Con_DPrintf ("AP respawn: cancelled for edict %d (free=%d, classname changed=%d)\n",
-					NUM_FOR_EDICT (check), check->free, check->v.classname != cached->classname);
+					NUM_FOR_EDICT (check), check->free, strcmp (PR_GetString (check->v.classname), cached->classname) != 0);
 			continue;
 		}
-
 		// make sure item and weapon spawns without modelindex are not interactable
 		if (check->v.modelindex == 0 && check->v.solid != 0)
 			check->v.solid = 0;
@@ -242,12 +285,19 @@ static void SV_AdjustAPModels (void)
 
 		if (AP_LOCATION_CHECKED (cached->location) || (state & 1))
 		{
+			if (!cached->respawn_classified)
+			{
+				cached->respawns = ED_HasLinks (check);
+				cached->respawn_classified = true;
+				Con_DPrintf ("AP respawn: classified %s (location %u, edict %d) as %d on pickup\n",
+					cached->classname, cached->location, NUM_FOR_EDICT (check), cached->respawns);
+			}
 			if (!(state & 1))
 			{
 				// need to set checked status in netname
 				check->v.netname = PR_SetEngineString (str_add_numeric_state (netname, 1, 0));
 			}
-			if (ED_HasTargets (check))
+			if (cached->respawns)
 			{
 				if (check->v.modelindex == ap_logo_model && check->v.solid == SOLID_TRIGGER)
 				{
@@ -264,10 +314,11 @@ static void SV_AdjustAPModels (void)
 				}
 			}
 			// checked locations without targets should be invisible, enforce
-			else if ((check->v.solid != 0 || check->v.modelindex != 0) && check->v.modelindex != ap_logo_model)
+			else if (check->v.solid != 0 || check->v.modelindex != 0)
 			{
 				check->v.solid = 0;
 				check->v.modelindex = 0;
+				SV_LinkEdict (check, false);
 			}
 		}
 	}

@@ -18,6 +18,7 @@
 #define AP_KEEP_SPAWNS 0
 
 #define AP_EDICT_RESPAWN_TIMER 3.0f
+#define AP_EDICT_LOAD_RESPAWN_TIMER 0.5f
 
 /*
 #ifdef _DEBUG

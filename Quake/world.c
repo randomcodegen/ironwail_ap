@@ -340,7 +340,7 @@ SV_AreaTriggerEdicts ( edict_t *ent, areanode_t *node, edict_t **list, int *list
 			// we are touching an invisible location, dont interact
 			else if (is_item_checked && touch->v.modelindex == 0)
 			{
-				//Con_SafePrintf ("Skipping touch func\n");
+				continue;
 			}
 			// [ap] We are touching a checked location that respawned, disable on touch
 			else if (is_item_checked && touch->v.modelindex == SV_ModelIndex ("progs/q1ap_token_white.mdl")) {
