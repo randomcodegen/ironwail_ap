@@ -107,6 +107,12 @@ cvar_t		ap_printbuttonblocked = { "ap_printbuttonblocked", "1", CVAR_ARCHIVE };
 cvar_t		ap_playsound = { "ap_playsound", "1", CVAR_ARCHIVE };
 cvar_t		ap_showmonsters = { "ap_showmonsters", "0", CVAR_ARCHIVE };
 cvar_t		ap_disabledeathlink = { "ap_disabledeathlink", "0", CVAR_ARCHIVE };
+cvar_t		ap_minnotify = { "ap_minnotify", "0", CVAR_ARCHIVE };
+
+float ap_get_minnotify (void)
+{
+	return ap_minnotify.value;
+}
 
 //johnfitz
 cvar_t		scr_usekfont = {"scr_usekfont", "0", CVAR_NONE}; // 2021 re-release
@@ -670,6 +676,7 @@ void SCR_Init (void)
 	Cvar_RegisterVariable (&ap_playsound);
 	Cvar_RegisterVariable (&ap_showmonsters);
 	Cvar_RegisterVariable (&ap_disabledeathlink);
+	Cvar_RegisterVariable (&ap_minnotify);
 	//johnfitz
 	Cvar_RegisterVariable (&scr_usekfont); // 2021 re-release
 	Cvar_SetCallback (&scr_fov, SCR_Callback_refdef);

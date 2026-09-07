@@ -1697,7 +1697,9 @@ void ED_LoadFromFile (const char *data)
 
 			// check if we force-overwrite a spawn
 			qboolean force_spawn = force_vanilla_spawn (force_vanilla_spawn_arr, loc_hash);
-
+			int do_replace = ap_replace_edict (loc_hash, "items");
+			if (AP_DEBUG_SPAWN)
+				do_replace = 1;
 
 			// [ap] offset edict origin for .bsp models
 			// TODO: Might need some tweaking
@@ -1705,29 +1707,17 @@ void ED_LoadFromFile (const char *data)
 				// TODO: This might break in other cases
 				ent->v.origin[2] -= 6;
 			}
-			else if (!force_spawn && !strcmp (PR_GetString (ent->v.classname), "item_shells") || !strcmp (PR_GetString (ent->v.classname), "item_spikes")
+			else if (do_replace && (!strcmp (PR_GetString (ent->v.classname), "item_shells") || !strcmp (PR_GetString (ent->v.classname), "item_spikes")
 				|| !strcmp (PR_GetString (ent->v.classname), "item_rockets") || !strcmp (PR_GetString (ent->v.classname), "item_cells")
-				|| !strcmp (PR_GetString (ent->v.classname), "item_health"))
+				|| !strcmp (PR_GetString (ent->v.classname), "item_health")))
 			{
 				ent->v.origin[0] += 16;
 				ent->v.origin[1] += 16;
 			}
 
-			int do_replace = ap_replace_edict (loc_hash, "items");
-			int replace_blank = 0;
-			
-			if (AP_DEBUG_SPAWN) 
-				do_replace = 1;
-			// First check for forced spawns
-			if (force_spawn) {
+			// Excluded locations retain the map's original pickup behavior.
+			if (force_spawn || do_replace == 0) {
 				func = ED_FindFunction (classname);
-			}
-			else if (do_replace == 0) {
-				//ap_printfd ("Freeing edict (not present in apworld): %s (%i)\n", PR_GetString (ent->v.classname), NUM_FOR_EDICT (ent));
-				ap_printfd ("Freeing edict (not present in apworld): %zu %s [%f %f %f]\n", loc_hash, PR_GetString (ent->v.classname), ent->v.origin[0], ent->v.origin[1], ent->v.origin[2]);
-				func = ED_FindFunction ("item_ap");
-				remove_after[remove_array_index] = ent;
-				remove_array_index++;
 			}
 			else if (do_replace == 2) 
 				func = ED_FindFunction ("item_ap_prog");

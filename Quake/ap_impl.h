@@ -17,6 +17,9 @@
 
 #define AP_KEEP_SPAWNS 0
 
+#define AP_ITEM_PROGRESSION (1 << 0)
+#define AP_ITEM_USEFUL      (1 << 1)
+
 #define AP_EDICT_RESPAWN_TIMER 3.0f
 #define AP_EDICT_LOAD_RESPAWN_TIMER 0.5f
 
@@ -125,6 +128,11 @@ extern char* ap_current_map;
 #define AP_LOCATION_USEFUL(x) (AP_LOCATION_CHECK_MASK(x, (AP_LOC_USED | AP_LOC_USEFUL)))
 #define AP_LOCATION_TRAP(x) (AP_LOCATION_CHECK_MASK(x, (AP_LOC_USED | AP_LOC_TRAP)))
 
+static inline bool ap_should_notify (int flags, float min_level)
+{
+	return (flags & AP_ITEM_PROGRESSION) || min_level <= ((flags & AP_ITEM_USEFUL) ? 1 : 0);
+}
+
 // AP Enums
 
 typedef enum
@@ -205,6 +213,7 @@ extern void ap_process_ingame_tic ();
 extern void ap_process_global_tic ();
 extern char** ap_get_latest_message ();
 extern int ap_message_pending ();
+extern float ap_get_minnotify ();
 extern void ap_sync_inventory ();
 int AP_IsLocHinted (uint64_t loc_hash, char* loc_type);
 

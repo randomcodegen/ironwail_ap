@@ -15,6 +15,8 @@ Currently only Windows x64 is supported.
 - Launch the game and bind the new keybinds at the bottom of Options->Key Setup
 - If you want to use expansions, move their *.pak file/s over to the folder with the same name in the ironwail_ap directory
 
+Pickups excluded from the seed's active AP locations spawn as vanilla items, including their normal rewards and map triggers. Active AP locations still use AP tokens and the existing white-token respawn behavior.
+
 ## New cvars:
 If set to 0, the HUD element only shows up when the scoreboard is open (tab by default).
 |CVAR|Description|
@@ -23,6 +25,11 @@ If set to 0, the HUD element only shows up when the scoreboard is open (tab by d
 |ap_alwaysshowunlocks|Always shows the unlocked abilities in the top-right corner|
 |ap_alwaysshowchecks|Always shows the available/collected checks of the current map in the bottom-right corner|
 |ap_alwaysshowinventory|Always shows the inventory items in the bottom middle|
+
+Notification cvars:
+|CVAR|Description|
+|---|---|
+|ap_minnotify|Minimum item notification level: 0 shows all, 1 hides filler, 2 also hides useful; progression is always shown|
 
 These cvars are for the automap:
 |CVAR|Description|

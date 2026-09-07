@@ -1020,6 +1020,17 @@ void AP_ProcessHints ()
 	}
 }
 
+static int AP_MessageItemFlags (const struct AP_Message* message)
+{
+	int flags = 0;
+	for (guint i = 0; message->messageParts && i < message->messageParts->len; ++i)
+	{
+		const struct AP_MessagePart* part = g_array_index (message->messageParts, struct AP_MessagePart*, i);
+		if (part && part->type == AP_ItemText) flags |= part->flags;
+	}
+	return flags;
+}
+
 // TODO: Work on colored console message output
 void AP_ProcessMessages ()
 {
@@ -1034,6 +1045,7 @@ void AP_ProcessMessages ()
 			case ItemSend:
 			{
 				struct AP_ItemSendMessage* out_msg = AP_GetLatestMessage ();
+				if (!ap_should_notify (AP_MessageItemFlags (&out_msg->base), ap_get_minnotify ())) break;
 				g_string_printf (print_msg, "%s was sent to %s\n", out_msg->item, out_msg->recvPlayer);
 				message_parts = create_message_parts_array (print_msg->str, out_msg->item, out_msg->recvPlayer, NULL, NULL, NULL);
 				break;
@@ -1041,6 +1053,7 @@ void AP_ProcessMessages ()
 			case ItemRecv:
 			{
 				struct AP_ItemRecvMessage* out_msg = AP_GetLatestMessage ();
+				if (!ap_should_notify (AP_MessageItemFlags (&out_msg->base), ap_get_minnotify ())) break;
 				g_string_printf (print_msg, "Received %s from %s\n", out_msg->item, out_msg->sendPlayer);
 				if (strcmp (out_msg->sendPlayer, ap_connection_settings.player))
 					ap_prog_sounds += 1;
@@ -1065,7 +1078,7 @@ void AP_ProcessMessages ()
 			}
 		}
 		//g_queue_push_tail (ap_message_queue, print_msg->str);
-		g_queue_push_tail (ap_message_queue, message_parts);
+		if (message_parts) g_queue_push_tail (ap_message_queue, message_parts);
 		g_string_free (print_msg, TRUE);
 
 		AP_ClearLatestMessage ();

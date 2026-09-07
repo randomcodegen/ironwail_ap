@@ -195,6 +195,9 @@ static void SV_BuildAPModelCache (void)
 	check = NEXT_EDICT (qcvm->edicts);
 	for (e = 1; e < qcvm->num_edicts; e++, check = NEXT_EDICT (check))
 	{
+		// Vanilla pickups keep their own model, touch and respawn behavior.
+		if (check->free || strncmp (PR_GetString (check->v.netname), "AP", 2))
+			continue;
 		const char* classname = PR_GetString (check->v.classname);
 		if (!strncmp (classname, "item_", 5) || !strncmp (classname, "weapon_", 7))
 		{

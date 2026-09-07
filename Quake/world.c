@@ -310,7 +310,9 @@ SV_AreaTriggerEdicts ( edict_t *ent, areanode_t *node, edict_t **list, int *list
 
 		// [ap] hook into player func when items/weapons are touched
 
-		if (!strncmp (PR_GetString (ent->v.classname), "player", 6) && (!strncmp (PR_GetString (touch->v.classname), "item_", 5) || !strncmp (PR_GetString (touch->v.classname), "weapon_", 7)))
+		if (!strncmp (PR_GetString (ent->v.classname), "player", 6)
+			&& !strncmp (PR_GetString (touch->v.netname), "AP", 2)
+			&& (!strncmp (PR_GetString (touch->v.classname), "item_", 5) || !strncmp (PR_GetString (touch->v.classname), "weapon_", 7)))
 		{
 			char* classname = GetClassname_APFormat (touch);
 			uint64_t loc_hash = 0;
