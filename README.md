@@ -15,7 +15,22 @@ Currently only Windows x64 is supported.
 - Launch the game and bind the new keybinds at the bottom of Options->Key Setup
 - If you want to use expansions, move their *.pak file/s over to the folder with the same name in the ironwail_ap directory
 
-Pickups excluded from the seed's active AP locations spawn as vanilla items, including their normal rewards and map triggers. Active AP locations still use AP tokens and the existing white-token respawn behavior.
+The YAML option `ap_vanilla_items` controls vanilla rewards for pickups excluded from the seed:
+
+```yaml
+Quake 1:
+  ap_vanilla_items:
+    "item_health (Megahealth)": 1
+    "item_health (Large Medkit)": 1
+    weapon_rocketlauncher: 0
+    item_artifact_super_damage: 0
+```
+
+Use the same item names as `custom_included_locations`. Each value must be `0` or `1`, removed entries default to `0`. 
+Active AP locations still use AP pickups. Disabled excluded items with map links appear as white translucent AP tokens so their triggers work. 
+Excluded pickups obey the map's difficulty and multiplayer spawn flags.
+
+This requires the updated APWorld and engine, and a newly generated seed. Older seeds default to all types disabled. Loading an existing save restores its saved entities.
 
 ## New cvars:
 If set to 0, the HUD element only shows up when the scoreboard is open (tab by default).

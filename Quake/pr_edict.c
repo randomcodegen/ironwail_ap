@@ -1581,6 +1581,10 @@ void ED_LoadFromFile (const char *data)
 		}
 
 		classname = PR_GetString (ent->v.classname);
+		qboolean skill_mismatch =
+			(current_skill == 0 && ((int)ent->v.spawnflags & SPAWNFLAG_NOT_EASY))
+			|| (current_skill == 1 && ((int)ent->v.spawnflags & SPAWNFLAG_NOT_MEDIUM))
+			|| (current_skill >= 2 && ((int)ent->v.spawnflags & SPAWNFLAG_NOT_HARD));
 		if (sv.mapchecks.active)
 		{
 			int skillflags = (int)ent->v.spawnflags & (SPAWNFLAG_NOT_EASY|SPAWNFLAG_NOT_MEDIUM|SPAWNFLAG_NOT_HARD);
@@ -1626,9 +1630,7 @@ void ED_LoadFromFile (const char *data)
 				continue;
 			}
 		}
-		else if ((current_skill == 0 && ((int)ent->v.spawnflags & SPAWNFLAG_NOT_EASY))
-				|| (current_skill == 1 && ((int)ent->v.spawnflags & SPAWNFLAG_NOT_MEDIUM))
-				|| (current_skill >= 2 && ((int)ent->v.spawnflags & SPAWNFLAG_NOT_HARD)) )
+		else if (skill_mismatch)
 		{
 			// [ap] Don't despawn items on other skills for consistency
 			
@@ -1701,13 +1703,22 @@ void ED_LoadFromFile (const char *data)
 			if (AP_DEBUG_SPAWN)
 				do_replace = 1;
 
+			// Only active AP checks may override the map's single-player spawn flags.
+			if (!do_replace && !deathmatch.value && skill_mismatch)
+			{
+				ED_Free (ent);
+				inhibit++;
+				continue;
+			}
+			qboolean vanilla_spawn = force_spawn || (!do_replace && ap_should_spawn_vanilla (classname, (int)ent->v.spawnflags));
+
 			// [ap] offset edict origin for .bsp models
 			// TODO: Might need some tweaking
 			if (force_spawn) {
 				// TODO: This might break in other cases
 				ent->v.origin[2] -= 6;
 			}
-			else if (do_replace && (!strcmp (PR_GetString (ent->v.classname), "item_shells") || !strcmp (PR_GetString (ent->v.classname), "item_spikes")
+			else if (!vanilla_spawn && (!strcmp (PR_GetString (ent->v.classname), "item_shells") || !strcmp (PR_GetString (ent->v.classname), "item_spikes")
 				|| !strcmp (PR_GetString (ent->v.classname), "item_rockets") || !strcmp (PR_GetString (ent->v.classname), "item_cells")
 				|| !strcmp (PR_GetString (ent->v.classname), "item_health")))
 			{
@@ -1715,8 +1726,7 @@ void ED_LoadFromFile (const char *data)
 				ent->v.origin[1] += 16;
 			}
 
-			// Excluded locations retain the map's original pickup behavior.
-			if (force_spawn || do_replace == 0) {
+			if (vanilla_spawn) {
 				func = ED_FindFunction (classname);
 			}
 			else if (do_replace == 2) 

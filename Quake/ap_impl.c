@@ -483,6 +483,18 @@ extern int ap_replace_edict (uint64_t loc_hash, char* loc_type)
 	return 1;
 }
 
+bool ap_should_spawn_vanilla (const char* classname, int spawnflags)
+{
+	// Health variants share a classname; match QuakeC's spawnflag priority.
+	if (!strcmp (classname, "item_health"))
+		classname = (spawnflags & 1) ? "item_health (Small Medkit)" :
+			(spawnflags & 2) ? "item_health (Megahealth)" : "item_health (Large Medkit)";
+
+	json_t* items = ght_lookup_str (ap_game_settings, "ap_vanilla_items");
+	json_t* enabled = json_object_get (items, classname);
+	return json_is_integer (enabled) && json_integer_value (enabled) == 1;
+}
+
 /*
   Return if an edict is already collected
   Delete = 1

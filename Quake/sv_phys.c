@@ -232,10 +232,14 @@ void SV_FinalizeAPModelCache (void)
 		ap_model_edict_t* cached = &ap_model_edicts[i];
 		cached->respawns = ED_HasLinks (cached->edict);
 		cached->respawn_classified = cached->respawns;
-		if (cached->respawns && !AP_VALID_LOCATION (cached->location))
-			Con_DPrintf ("AP respawn: no location for %s at %.0f %.0f %.0f (edict %d)\n",
-				cached->classname, cached->edict->v.origin[0], cached->edict->v.origin[1],
-				cached->edict->v.origin[2], NUM_FOR_EDICT (cached->edict));
+		// Hide excluded AP placeholders before baselines are sent. Linked ones
+		// are restored by SV_AdjustAPModels using the normal white-item path.
+		if (!AP_DEBUG_SPAWN && !AP_VALID_LOCATION (cached->location))
+		{
+			cached->edict->v.solid = 0;
+			cached->edict->v.modelindex = 0;
+			SV_LinkEdict (cached->edict, false);
+		}
 	}
 	ap_model_cache_finalized = true;
 }
@@ -267,6 +271,12 @@ static void SV_AdjustAPModels (void)
 
 		netname = PR_GetString (check->v.netname);
 		state = str_return_numeric_state (netname);
+
+		// Excluded pickups with map links must still fire their targets. Wait for
+		// map setup to finish so incoming links are known, then restore them white.
+		if (!AP_DEBUG_SPAWN && cached->respawns && !AP_VALID_LOCATION (cached->location)
+			&& !(state & 1) && !cached->respawn_at)
+			cached->respawn_at = qcvm->time;
 
 		// Once scheduled, a respawn must not depend on mutable target or AP state.
 		if (cached->respawn_at)

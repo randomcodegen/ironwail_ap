@@ -218,6 +218,7 @@ extern void ap_sync_inventory ();
 int AP_IsLocHinted (uint64_t loc_hash, char* loc_type);
 
 extern int ap_replace_edict (uint64_t loc_hash, char* loc_type);
+extern bool ap_should_spawn_vanilla (const char* classname, int spawnflags);
 extern int ap_is_edict_collected (uint64_t loc_hash, char* loc_type);
 extern char* edict_get_loc_name (uint64_t loc_hash, char* loc_type);
 
