@@ -483,6 +483,13 @@ extern int ap_replace_edict (uint64_t loc_hash, char* loc_type)
 	return 1;
 }
 
+bool ap_counts_as_monster (const char* classname, int spawnflags)
+{
+	// zombie.qc: SPAWN_CRUCIFIED (1) skips damage setup and monster counting.
+	return !strncmp (classname, "monster", 7)
+		&& !(!strcmp (classname, "monster_zombie") && (spawnflags & 1));
+}
+
 bool ap_should_spawn_vanilla (const char* classname, int spawnflags)
 {
 	// Health variants share a classname; match QuakeC's spawnflag priority.

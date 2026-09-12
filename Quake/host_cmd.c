@@ -3171,7 +3171,7 @@ static void Host_Spawn_f (void)
 	for (int i = 0; i < qcvm->num_edicts; i++)
 	{
 		ent = EDICT_NUM (i);
-		if (!strncmp ("monster", PR_GetString (ent->v.classname), 7) && ent->v.modelindex != 0)
+		if (ap_counts_as_monster (PR_GetString (ent->v.classname), (int)ent->v.spawnflags) && ent->v.modelindex != 0)
 			total_killcount += 1;
 	}
 	MSG_WriteByte (&host_client->message, svc_updatestat);

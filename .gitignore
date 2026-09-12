@@ -16,4 +16,4 @@ update_submodule.txt
 *.cache
 /Windows/VisualStudio
 /Quake - Copy
-/tests
+/tests/*

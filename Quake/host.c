@@ -1048,7 +1048,7 @@ static void GetGameSummary (summary_t *s)
 			for (int i = 0; i < qcvm->num_edicts; i++)
 			{
 				ent = EDICT_NUM (i);
-				if (!strncmp ("monster", PR_GetString (ent->v.classname), 7) && ent->v.health > 0 && ent->v.modelindex != 0)
+				if (ap_counts_as_monster (PR_GetString (ent->v.classname), (int)ent->v.spawnflags) && ent->v.health > 0 && ent->v.modelindex != 0)
 					all_kills = 0;
 			}
 			if (ap_giveallkills == 1.0) all_kills = 1;
