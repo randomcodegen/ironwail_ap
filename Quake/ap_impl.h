@@ -256,6 +256,7 @@ char* extract_bracketed_part (const char* str);
 void ap_free_message_parts_array (char** parts);
 
 // lib passthrough
+char* ap_hint_argument (char* text, bool* locations);
 bool ap_console_command (char* text);
 void ap_complete_hint (const char* partial, bool locations,
 	void (*add) (const char* name, const char* partial, const char* type));

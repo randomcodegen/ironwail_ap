@@ -19,14 +19,42 @@ json_t* ap_config = NULL;
 json_t* ap_connect_info = NULL;
 json_t* ap_game_config = NULL;
 
-bool ap_console_command (char* text)
+char* ap_hint_argument (char* text, bool* locations)
 {
+	int length;
 	while (*text == ' ' || *text == '\t')
 		text++;
-	if (*text != '!')
+	if (*text == '!')
+		text++;
+	*locations = !g_ascii_strncasecmp (text, "hint_location", 13);
+	length = *locations ? 13 : 4;
+	if (!*locations && g_ascii_strncasecmp (text, "hint", 4))
+		return NULL;
+	text += length;
+	if (*text && *text != ' ' && *text != '\t')
+		return NULL;
+	while (*text == ' ' || *text == '\t')
+		text++;
+	return text;
+}
+
+bool ap_console_command (char* text)
+{
+	bool locations;
+	char* argument = ap_hint_argument (text, &locations);
+	while (*text == ' ' || *text == '\t')
+		text++;
+	if (*text != '!' && !argument)
 		return false;
-	if (ap_global_state == AP_UNINIT || AP_GetConnectionStatus () != Connected)
+	if (ap_global_state == AP_UNINIT || AP_GetConnectionStatus () != Authenticated)
 		ap_printf ("Not connected to an AP server.\n");
+	else if (argument)
+	{
+		char* command = g_strdup_printf ("!%s%s%s", locations ? "hint_location" : "hint",
+			*argument ? " " : "", argument);
+		AP_SendMsg (command);
+		g_free (command);
+	}
 	else
 		AP_SendMsg (text);
 	return true;
