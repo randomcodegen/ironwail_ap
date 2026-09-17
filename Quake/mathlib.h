@@ -77,23 +77,24 @@ do\
 	}\
 } while (0)
 
-void TurnVector (vec3_t out, const vec3_t forward, const vec3_t side, float angle); //johnfitz
 void VectorAngles (const vec3_t forward, vec3_t angles); //johnfitz
 
 void VectorMA (const vec3_t veca, float scale, const vec3_t vecb, vec3_t vecc);
 void VectorLerp (const vec3_t veca, const vec3_t vecb, float frac, vec3_t dst);
 
-vec_t _DotProduct (vec3_t v1, vec3_t v2);
-void _VectorSubtract (vec3_t veca, vec3_t vecb, vec3_t out);
-void _VectorAdd (vec3_t veca, vec3_t vecb, vec3_t out);
-void _VectorCopy (vec3_t in, vec3_t out);
+vec_t _DotProduct (const vec3_t v1, const vec3_t v2);
+void _VectorSubtract (const vec3_t veca, const vec3_t vecb, vec3_t out);
+void _VectorAdd (const vec3_t veca, const vec3_t vecb, vec3_t out);
+void _VectorCopy (const vec3_t in, vec3_t out);
 
 int VectorCompare (const vec3_t v1, const vec3_t v2);
-vec_t VectorLength (vec3_t v);
-void CrossProduct (vec3_t v1, vec3_t v2, vec3_t cross);
+vec_t VectorLength (const vec3_t v);
+void CrossProduct (const vec3_t v1, const vec3_t v2, vec3_t cross);
 float VectorNormalize (vec3_t v);		// returns vector length
+float DistanceSquared (const vec3_t a, const vec3_t b);
+float Distance (const vec3_t a, const vec3_t b);
 void VectorInverse (vec3_t v);
-void VectorScale (vec3_t in, vec_t scale, vec3_t out);
+void VectorScale (const vec3_t in, vec_t scale, vec3_t out);
 int Q_log2(int val);
 int Q_nextPow2(int val);
 
@@ -115,6 +116,9 @@ void DecodeMortonIndex (uint16_t index, int *x, int *y);
 
 void R_ConcatRotations (float in1[3][3], float in2[3][3], float out[3][3]);
 void R_ConcatTransforms (float in1[3][4], float in2[3][4], float out[3][4]);
+
+void Matrix3x4_RM_Transform4 (const float *matrix, const float *vector, float *product);
+void Matrix3x4_RM_Transform3 (const float *matrix, const float *vector, float *product);
 
 void FloorDivMod (double numer, double denom, int *quotient,
 		int *rem);

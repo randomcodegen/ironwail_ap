@@ -27,6 +27,8 @@ qboolean	r_cache_thrash;		// compatability
 
 gpuframedata_t r_framedata;
 
+vec3_t		*r_pointfile;
+
 int			r_visframecount;	// bumped when going to a new PVS
 int			r_framecount;		// used for dlight push checking
 
@@ -109,6 +111,7 @@ cvar_t	r_lerpmodels = {"r_lerpmodels", "1", CVAR_ARCHIVE};
 cvar_t	r_lerpmove = {"r_lerpmove", "1", CVAR_ARCHIVE};
 cvar_t	r_nolerp_list = {"r_nolerp_list", "progs/flame.mdl,progs/flame2.mdl,progs/braztall.mdl,progs/brazshrt.mdl,progs/longtrch.mdl,progs/flame_pyre.mdl,progs/v_saw.mdl,progs/v_xfist.mdl,progs/h2stuff/newfire.mdl", CVAR_NONE};
 cvar_t	r_noshadow_list = {"r_noshadow_list", "progs/flame2.mdl,progs/flame.mdl,progs/bolt1.mdl,progs/bolt2.mdl,progs/bolt3.mdl,progs/laser.mdl", CVAR_NONE};
+cvar_t	r_showskel = {"r_showskel", "0", CVAR_NONE};
 
 // [ap]
 cvar_t	ap_highlighthinted = { "ap_highlighthinted", "1", CVAR_ARCHIVE };
@@ -1173,7 +1176,8 @@ void R_DrawViewModel (void)
 	GL_EndGroup ();
 }
 
-typedef struct debugvert_s {
+typedef struct debugvert_s
+{
 	vec3_t		pos;
 	uint32_t	color;
 } debugvert_t;
@@ -1182,21 +1186,26 @@ static debugvert_t	debugverts[4096];
 static uint16_t		debugidx[8192];
 static int			numdebugverts = 0;
 static int			numdebugidx = 0;
+static qboolean		debugztest = false;
 
 /*
 ================
 R_FlushDebugGeometry
 ================
 */
-static void R_FlushDebugGeometry (void)
+void R_FlushDebugGeometry (void)
 {
 	if (numdebugverts && numdebugidx)
 	{
 		GLuint	buf;
 		GLbyte	*ofs;
+		unsigned int state;
 
 		GL_UseProgram (glprogs.debug3d);
-		GL_SetState (GLS_BLEND_ALPHA | GLS_NO_ZTEST | GLS_NO_ZWRITE | GLS_CULL_NONE | GLS_ATTRIBS(2));
+		state = GLS_BLEND_ALPHA | GLS_NO_ZWRITE | GLS_CULL_NONE | GLS_ATTRIBS(2);
+		if (!debugztest)
+			state |= GLS_NO_ZTEST;
+		GL_SetState (state);
 
 		GL_Upload (GL_ARRAY_BUFFER, debugverts, sizeof (debugverts[0]) * numdebugverts, &buf, &ofs);
 		GL_BindBuffer (GL_ARRAY_BUFFER, buf);
@@ -1210,6 +1219,19 @@ static void R_FlushDebugGeometry (void)
 
 	numdebugverts = 0;
 	numdebugidx = 0;
+}
+
+/*
+================
+R_SetDebugGeometryZTest
+================
+*/
+void R_SetDebugGeometryZTest (qboolean ztest)
+{
+	if (debugztest == ztest)
+		return;
+	R_FlushDebugGeometry ();
+	debugztest = ztest;
 }
 
 /*
@@ -1239,7 +1261,7 @@ static void R_AddDebugGeometry (const debugvert_t verts[], int numverts, const u
 R_EmitLine
 ================
 */
-static void R_EmitLine (const vec3_t a, const vec3_t b, uint32_t color)
+void R_EmitLine (const vec3_t a, const vec3_t b, uint32_t color)
 {
 	debugvert_t verts[2];
 	uint16_t idx[2];
@@ -1259,7 +1281,7 @@ static void R_EmitLine (const vec3_t a, const vec3_t b, uint32_t color)
 R_EmitWirePoint -- johnfitz -- draws a wireframe cross shape for point entities
 ================
 */
-static void R_EmitWirePoint (const vec3_t origin, uint32_t color)
+void R_EmitWirePoint (const vec3_t origin, uint32_t color)
 {
 	const float Size = 8.f;
 	int i;
@@ -1281,7 +1303,7 @@ R_EmitWireBox -- johnfitz -- draws one axis aligned bounding box
 */
 static const uint16_t boxidx[12*2] = { 0,1, 0,2, 0,4, 1,3, 1,5, 2,3, 2,6, 3,7, 4,5, 4,6, 5,7, 6,7, };
 
-static void R_EmitWireBox (const vec3_t mins, const vec3_t maxs, uint32_t color)
+void R_EmitWireBox (const vec3_t mins, const vec3_t maxs, uint32_t color)
 {
 	int i;
 	debugvert_t v[8];
@@ -1302,7 +1324,7 @@ static void R_EmitWireBox (const vec3_t mins, const vec3_t maxs, uint32_t color)
 R_EmitArrow
 ================
 */
-static void R_EmitArrow (const vec3_t from, const vec3_t to, uint32_t color)
+void R_EmitArrow (const vec3_t from, const vec3_t to, uint32_t color)
 {
 	float	frac, len;
 	vec3_t	center, dir, side, tmp;
@@ -1492,6 +1514,8 @@ static void R_ShowBoundingBoxes (void)
 		return;
 
 	GL_BeginGroup ("Show bounding boxes");
+
+	R_SetDebugGeometryZTest (false);
 
 	oldvm = qcvm;
 	PR_SwitchQCVM(NULL);
@@ -1734,6 +1758,112 @@ static void R_ShowBoundingBoxes (void)
 }
 
 /*
+===============
+R_ShowSkeletons
+===============
+*/
+static void R_ShowSkeletons (void)
+{
+	int		*ofs;
+	entity_t **entlist = cl_sorted_visedicts;
+
+	if (!r_showskel.value || cl.maxclients > 1)
+		return;
+
+	GL_BeginGroup ("Skeletons");
+
+	R_SetDebugGeometryZTest (false);
+
+	ofs = cl_modtype_ofs;
+	R_DrawAliasModels_ShowSkel (entlist + ofs[2*mod_alias ], ofs[2*mod_alias +2] - ofs[2*mod_alias ]);
+
+	R_FlushDebugGeometry ();
+
+	GL_EndGroup ();
+}
+
+/*
+===============
+R_ShowPointFile
+===============
+*/
+static void R_ShowPointFile (void)
+{
+	size_t i;
+
+	if (VEC_SIZE (r_pointfile) == 0)
+		return;
+
+	GL_BeginGroup ("Point file");
+	R_SetDebugGeometryZTest (true);
+	for (i = 1; i < VEC_SIZE (r_pointfile); i++)
+		R_EmitArrow (r_pointfile[i - 1], r_pointfile[i], 0xff3f3f7f);
+	R_FlushDebugGeometry ();
+	GL_EndGroup ();
+}
+
+/*
+===============
+Collinear
+===============
+*/
+static qboolean Collinear (const vec3_t a, const vec3_t b, const vec3_t c)
+{
+	return Distance (a, b) + Distance (b, c) < Distance (a, c) * 1.00001f;
+}
+
+/*
+===============
+R_ReadPointFile_f
+===============
+*/
+void R_ReadPointFile_f (void)
+{
+	FILE		*f;
+	vec3_t		org;
+	int			r, n;
+	qboolean	leakmode;
+	char		name[MAX_QPATH];
+
+	VEC_CLEAR (r_pointfile);
+
+	if (cls.state != ca_connected)
+		return;			// need an active map.
+
+	q_snprintf (name, sizeof(name), "maps/%s.pts", cl.mapname);
+	leakmode = Cmd_Argc () >= 2 && !strcmp (Cmd_Argv (1), "leak");
+
+	COM_FOpenFile (name, &f, NULL);
+	if (!f)
+	{
+		Con_Printf ("couldn't open %s\n", name);
+		return;
+	}
+
+	if (!leakmode)
+		Con_Printf ("Reading %s...\n", name);
+	org[0] = org[1] = org[2] = 0; // silence pesky compiler warnings
+
+	for (r = 0; fscanf (f,"%f %f %f\n", &org[0], &org[1], &org[2]) == 3; r++)
+	{
+		Vec_Append ((void **) &r_pointfile, sizeof (r_pointfile[0]), &org, 1);
+		n = (int) VEC_SIZE (r_pointfile);
+		if (n >= 3 && Collinear (r_pointfile[n-3], r_pointfile[n-2], r_pointfile[n-1]))
+		{
+			VectorCopy (r_pointfile[n-1], r_pointfile[n-2]);
+			VEC_POP (r_pointfile);
+		}
+	}
+
+	fclose (f);
+
+	if (leakmode)
+		Con_Warning ("map appears to have leaks!\n");
+	else
+		Con_Printf ("%i points read (%i significant)\n", r, (int) VEC_SIZE (r_pointfile));
+}
+
+/*
 ================
 R_ShowTris -- johnfitz
 ================
@@ -1855,8 +1985,6 @@ void R_RenderScene (void)
 
 	Fog_EnableGFog (); //johnfitz
 
-	R_DrawViewModel (); //johnfitz -- moved here from R_RenderView
-
 	S_ExtraUpdate (); // don't let sound get messed up if going slow
 
 	R_DrawEntitiesOnList (false); //johnfitz -- false means this is the pass for nonalpha entities
@@ -1877,9 +2005,15 @@ void R_RenderScene (void)
 
 	R_EndTranslucency ();
 
+	R_DrawViewModel (); //johnfitz -- moved here from R_RenderView -- il8r -- moved for oit reasons
+
 	R_ShowTris (); //johnfitz
 
 	R_ShowBoundingBoxes (); //johnfitz
+
+	R_ShowSkeletons ();
+
+	R_ShowPointFile ();
 }
 
 /*

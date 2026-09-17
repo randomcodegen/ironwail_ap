@@ -39,6 +39,8 @@ extern	int glx, gly, glwidth, glheight;
 
 #define BACKFACE_EPSILON	0.01
 
+extern vec3_t *r_pointfile;
+
 void R_TimeRefresh_f (void);
 void R_ReadPointFile_f (void);
 texture_t *R_TextureAnimation (texture_t *base, int frame);
@@ -297,6 +299,9 @@ void GL_ResetState (void);
 extern GLint ssbo_align; // SSBO alignment - 1
 extern GLint ubo_align; // UBO alignment - 1
 
+static inline size_t GL_AlignSSBO (size_t ofs) { return (ofs + ssbo_align) & ~ssbo_align; }
+static inline size_t GL_AlignUBO (size_t ofs) { return (ofs + ubo_align) & ~ubo_align; }
+
 //johnfitz -- anisotropic filtering
 #define	GL_TEXTURE_MAX_ANISOTROPY_EXT		0x84FE
 #define	GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT	0x84FF
@@ -461,8 +466,17 @@ void R_DrawSpriteModels (entity_t **ents, int count);
 void R_DrawBrushModels_ShowTris (entity_t **ents, int count);
 void R_DrawAliasModels_ShowTris (entity_t **ents, int count);
 void R_DrawSpriteModels_ShowTris (entity_t **ents, int count);
+void R_DrawAliasModels_ShowSkel (entity_t **ents, int count);
 
 entity_t **R_GetVisEntities (modtype_t type, qboolean translucent, int *outcount);
+
+// Debug drawing
+void R_SetDebugGeometryZTest (qboolean ztest);
+void R_EmitLine (const vec3_t a, const vec3_t b, uint32_t color);
+void R_EmitWirePoint (const vec3_t origin, uint32_t color);
+void R_EmitWireBox (const vec3_t mins, const vec3_t maxs, uint32_t color);
+void R_EmitArrow (const vec3_t from, const vec3_t to, uint32_t color);
+void R_FlushDebugGeometry (void);
 
 void R_ClearBoundingBoxes (void);
 
@@ -528,7 +542,7 @@ typedef struct glprogs_s {
 	GLuint		skylayers[2];		// [dither]
 	GLuint		skycubemap[2][2];	// [anim][dither]
 	GLuint		skyboxside[2];		// [dither]
-	GLuint		alias[2][3][2][2];	// [OIT][mode:standard/dithered/noperspective][alpha test][md5]
+	GLuint		alias[2][3][2][3];	// [OIT][mode:standard/dithered/noperspective][alpha test][poseverttype]
 	GLuint		sprites[2];			// [dither]
 	GLuint		particles[2][2];	// [OIT][dither]
 	GLuint		debug3d;
@@ -610,7 +624,7 @@ typedef struct skybox_s
 	gltexture_t		*textures[6];
 	gltexture_t		*cubemap;
 	byte			*cubemap_pixels;
-	void			*cubemap_offsets[6];
+	void			**cubemap_offsets;
 } skybox_t;
 
 extern skybox_t		*skybox;

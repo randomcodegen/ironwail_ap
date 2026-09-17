@@ -35,6 +35,8 @@ const float	r_avertexnormals[NUMVERTEXNORMALS][3] = {
 #include "anorms.h"
 };
 
+typedef enum { ALIAS_STANDARD, ALIAS_SHOWTRIS, ALIAS_SHOWSKEL, } aliasmode_t;
+
 extern vec3_t	lightcolor; //johnfitz -- replaces "float shadelight" for lit support
 
 static float	entalpha; //johnfitz
@@ -294,29 +296,30 @@ R_FlushAliasInstances
 void R_FlushAliasInstances (qboolean showtris)
 {
 	extern cvar_t r_softemu_mdl_warp;
-	qmodel_t	*model;
-	aliashdr_t	*mainhdr, *hdr;
-	qboolean	alphatest, translucent, oit, md5;
+	qmodel_t* model;
+	aliashdr_t* mainhdr, *hdr;
+	qboolean	alphatest, translucent, oit;
+	int			totalverts;
+	int			poseverttype;
 	int			skinnum, anim, mode;
-	unsigned	state;
+	unsigned	state, opaque_state, transparent_state;
 	GLuint		buf;
-	GLbyte		*ofs;
+	GLbyte* ofs;
 	size_t		ibuf_size;
 	GLuint		buffers[2];
 	GLintptr	offsets[2];
 	GLsizeiptr	sizes[2];
-	gltexture_t	*textures[2];
+	gltexture_t* textures[2];
 
 	if (!ibuf.count)
 		return;
 
 	model = ibuf.ent->model;
-	mainhdr = (aliashdr_t *)Mod_Extradata (model);
-	anim = (int)(cl.time*10) & 3;
+	mainhdr = (aliashdr_t*)Mod_Extradata (model);
+	anim = (int)(cl.time * 10) & 3;
 
 	GL_BeginGroup (model->name);
-
-	md5 = mainhdr->poseverttype == PV_IQM;
+	poseverttype = mainhdr->poseverttype;
 
 	alphatest = model->flags & MF_HOLEY ? 1 : 0;
 	translucent = !ENTALPHA_OPAQUE (ibuf.ent->alpha);
@@ -333,110 +336,132 @@ void R_FlushAliasInstances (qboolean showtris)
 		mode = r_softemu_mdl_warp.value > 0.f ? ALIASSHADER_NOPERSP : ALIASSHADER_STANDARD;
 		break;
 	}
-	GL_UseProgram (glprogs.alias[oit][mode][alphatest][md5]);
+	GL_UseProgram (glprogs.alias[oit][mode][alphatest][poseverttype]);
 
-	if (md5)
-		state = GLS_CULL_BACK | GLS_ATTRIBS(5);
+	if (poseverttype == PV_IQM)
+		state = GLS_CULL_BACK | GLS_ATTRIBS (5);
 	else
-		state = GLS_CULL_BACK | GLS_ATTRIBS(1);
+		state = GLS_CULL_BACK | GLS_ATTRIBS (1);
 
-	if (!translucent)
-		state |= GLS_BLEND_OPAQUE;
-	else
-		state |= GLS_BLEND_ALPHA_OIT | GLS_NO_ZWRITE;
-	GL_SetState (state);
+	opaque_state = (state | GLS_BLEND_OPAQUE) & ~(GLS_BLEND_ALPHA_OIT | GLS_NO_ZWRITE);
+	transparent_state = (state | GLS_BLEND_ALPHA) & ~(GLS_BLEND_OPAQUE | GLS_CULL_BACK);
+
+	if (translucent)
+	{
+		GL_SetState ((state | GLS_BLEND_ALPHA_OIT | GLS_NO_ZWRITE) & ~GLS_CULL_BACK);
+	}
 
 	memcpy (ibuf.global.matviewproj, r_matviewproj, sizeof (r_matviewproj));
 	memcpy (ibuf.global.eyepos, r_refdef.vieworg, sizeof (r_refdef.vieworg));
 	memcpy (ibuf.global.fog, r_framedata.fogdata, 3 * sizeof (float));
-	// use fog density sign bit as overbright flag
 	ibuf.global.fog[3] =
 		gl_overbright_models.value ?
-			-fabs (r_framedata.fogdata[3]) :
-			 fabs (r_framedata.fogdata[3])
-	;
+		-fabs (r_framedata.fogdata[3]) :
+		fabs (r_framedata.fogdata[3])
+		;
 	ibuf.global.dither = r_framedata.screendither;
 
-	ibuf_size = sizeof(ibuf.global) + sizeof(ibuf.inst[0]) * ibuf.count;
+	ibuf_size = sizeof (ibuf.global) + sizeof (ibuf.inst[0]) * ibuf.count;
 	GL_Upload (GL_SHADER_STORAGE_BUFFER, &ibuf.global, ibuf_size, &buf, &ofs);
 
+	for (hdr = mainhdr, totalverts = 0; hdr; hdr = Mod_NextSurface (hdr))
+		totalverts += hdr->numverts_vbo;
+
 	buffers[0] = buf;
-	offsets[0] = (GLintptr) ofs;
+	offsets[0] = (GLintptr)ofs;
 	sizes[0] = ibuf_size;
+	switch (poseverttype)
+	{
+	case PV_IQM:
+		buffers[1] = model->meshvbo; offsets[1] = mainhdr->vboposeofs; sizes[1] = sizeof (bonepose_t) * mainhdr->numbones * mainhdr->numposes;
+		break;
+	case PV_MD3:
+		buffers[1] = model->meshvbo; offsets[1] = mainhdr->vbovertofs; sizes[1] = sizeof (md3pose_t) * totalverts * mainhdr->numposes;
+		break;
+	case PV_QUAKE1:
+		buffers[1] = model->meshvbo; offsets[1] = mainhdr->vbovertofs; sizes[1] = sizeof (meshxyz_t) * totalverts * mainhdr->numposes;
+		break;
+	default:
+		return;
+	}
 
 	GL_BindBuffer (GL_ARRAY_BUFFER, model->meshvbo);
 	GL_BindBuffer (GL_ELEMENT_ARRAY_BUFFER, model->meshindexesvbo);
+	GL_BindBuffersRange (GL_SHADER_STORAGE_BUFFER, 1, 2, buffers, offsets, sizes);
 
-	for (hdr = mainhdr; hdr; hdr = hdr->nextsurface ? (aliashdr_t *) ((byte *)hdr + hdr->nextsurface) : NULL)
+	if (poseverttype == PV_IQM)
 	{
-		if (md5)
-		{
-			GL_VertexAttribPointerFunc  (0, 3, GL_FLOAT,			GL_FALSE, sizeof (iqmvert_t), (void *) (hdr->vbovertofs + offsetof (iqmvert_t, xyz)));
-			GL_VertexAttribPointerFunc  (1, 4, GL_BYTE,				GL_TRUE,  sizeof (iqmvert_t), (void *) (hdr->vbovertofs + offsetof (iqmvert_t, norm)));
-			GL_VertexAttribPointerFunc  (2, 2, GL_FLOAT,			GL_FALSE, sizeof (iqmvert_t), (void *) (hdr->vbovertofs + offsetof (iqmvert_t, st)));
-			GL_VertexAttribPointerFunc  (3, 4, GL_UNSIGNED_BYTE,	GL_TRUE,  sizeof (iqmvert_t), (void *) (hdr->vbovertofs + offsetof (iqmvert_t, weight)));
-			GL_VertexAttribIPointerFunc (4, 4, GL_UNSIGNED_BYTE,	          sizeof (iqmvert_t), (void *) (hdr->vbovertofs + offsetof (iqmvert_t, idx)));
+		GL_VertexAttribPointerFunc (0, 3, GL_FLOAT, GL_FALSE, sizeof (iqmvert_t), (void*)(mainhdr->vbovertofs + offsetof (iqmvert_t, xyz)));
+		GL_VertexAttribPointerFunc (1, 4, GL_BYTE, GL_TRUE, sizeof (iqmvert_t), (void*)(mainhdr->vbovertofs + offsetof (iqmvert_t, norm)));
+		GL_VertexAttribPointerFunc (2, 2, GL_FLOAT, GL_FALSE, sizeof (iqmvert_t), (void*)(mainhdr->vbovertofs + offsetof (iqmvert_t, st)));
+		GL_VertexAttribPointerFunc (3, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof (iqmvert_t), (void*)(mainhdr->vbovertofs + offsetof (iqmvert_t, weight)));
+		GL_VertexAttribIPointerFunc (4, 4, GL_UNSIGNED_BYTE, sizeof (iqmvert_t), (void*)(mainhdr->vbovertofs + offsetof (iqmvert_t, idx)));
+	}
+	else // PV_QUAKE1 || PV_MD3
+	{
+		GL_VertexAttribPointerFunc (0, 2, GL_FLOAT, GL_FALSE, sizeof (meshst_t), (void*)mainhdr->vbostofs);
+	}
 
-			buffers[1] = model->meshvbo;
-			offsets[1] = hdr->vboposeofs;
-			sizes[1] = sizeof (bonepose_t) * hdr->numbones * hdr->numboneposes;
-		}
-		else
-		{
-			GL_VertexAttribPointerFunc (0, 2, GL_FLOAT, GL_FALSE, sizeof (meshst_t), (void *) hdr->vbostofs);
+	if (!translucent)
+		GL_SetState (opaque_state);
 
-			buffers[1] = model->meshvbo;
-			offsets[1] = hdr->vbovertofs;
-			sizes[1] = sizeof (meshxyz_t) * hdr->numverts_vbo * hdr->numposes;
-		}
-
-		GL_BindBuffersRange (GL_SHADER_STORAGE_BUFFER, 1, 2, buffers, offsets, sizes);
-
-		//
-		// set up textures
-		//
+	for (hdr = mainhdr; hdr; hdr = Mod_NextSurface (hdr))
+	{
 		skinnum = ibuf.ent->skinnum;
-		if ((skinnum >= hdr->numskins) || (skinnum < 0))
-		{
-			Con_DPrintf ("R_DrawAliasModel: no such skin # %d for '%s'\n", skinnum, model->name);
-			// ericw -- display skin 0 for winquake compatibility
-			skinnum = 0;
-		}
-
+		if ((skinnum >= hdr->numskins) || (skinnum < 0)) skinnum = 0;
 		textures[0] = hdr->gltextures[skinnum][anim];
+		if (!textures[0]) continue;
+
+		if (!translucent && (textures[0]->flags & TEXPREF_ALPHAPIXELS))
+		{
+			continue;
+		}
 		textures[1] = hdr->fbtextures[skinnum][anim];
 		if (hdr == mainhdr && ibuf.ent->colormap != vid.colormap && !gl_nocolors.value)
-			if (CL_IsPlayerEnt (ibuf.ent)) /* && !strcmp (ibuf.ent->model->name, "progs/player.mdl") */
-				textures[0] = playertextures[ibuf.ent - cl_entities - 1];
-
-		if (!gl_fullbrights.value)
-			textures[1] = blacktexture;
-
-		if (r_lightmap_cheatsafe)
-		{
-			textures[0] = greytexture;
-			textures[1] = blacktexture;
-		}
-
-		if (!textures[1])
-			textures[1] = blacktexture;
-
-		if (showtris)
-		{
-			textures[0] = blacktexture;
-			textures[1] = whitetexture;
-		}
+			if (CL_IsPlayerEnt (ibuf.ent)) textures[0] = playertextures[ibuf.ent - cl_entities - 1];
+		if (!gl_fullbrights.value) textures[1] = blacktexture;
+		if (r_lightmap_cheatsafe) { textures[0] = greytexture; textures[1] = blacktexture; }
+		if (!textures[1]) textures[1] = blacktexture;
+		if (showtris) { textures[0] = blacktexture; textures[1] = whitetexture; }
 
 		GL_BindTextures (0, 2, textures);
-
-		GL_DrawElementsInstancedFunc (GL_TRIANGLES, hdr->numindexes, GL_UNSIGNED_SHORT, (void *)hdr->eboofs, ibuf.count);
-
+		GL_DrawElementsInstancedFunc (GL_TRIANGLES, hdr->numindexes, GL_UNSIGNED_SHORT, (void*)hdr->eboofs, ibuf.count);
 		rs_aliaspasses += hdr->numtris * ibuf.count;
 	}
 
-	ibuf.count = 0;
+	if (!translucent)
+	{
+		GL_SetState (transparent_state);
 
-	GL_EndGroup();
+		for (hdr = mainhdr; hdr; hdr = Mod_NextSurface (hdr))
+		{
+			skinnum = ibuf.ent->skinnum;
+			if ((skinnum >= hdr->numskins) || (skinnum < 0)) skinnum = 0;
+			textures[0] = hdr->gltextures[skinnum][anim];
+			if (!textures[0]) continue;
+
+			if (!(textures[0]->flags & TEXPREF_ALPHAPIXELS))
+			{ 
+				continue;
+			}
+
+			textures[1] = hdr->fbtextures[skinnum][anim];
+			if (hdr == mainhdr && ibuf.ent->colormap != vid.colormap && !gl_nocolors.value)
+				if (CL_IsPlayerEnt (ibuf.ent)) textures[0] = playertextures[ibuf.ent - cl_entities - 1];
+			if (!gl_fullbrights.value) textures[1] = blacktexture;
+			if (r_lightmap_cheatsafe) { textures[0] = greytexture; textures[1] = blacktexture; }
+			if (!textures[1]) textures[1] = blacktexture;
+			if (showtris) { textures[0] = blacktexture; textures[1] = whitetexture; }
+
+			GL_BindTextures (0, 2, textures);
+			GL_DrawElementsInstancedFunc (GL_TRIANGLES, hdr->numindexes, GL_UNSIGNED_SHORT, (void*)hdr->eboofs, ibuf.count);
+			rs_aliaspasses += hdr->numtris * ibuf.count;
+		}
+
+	}
+
+	ibuf.count = 0;
+	GL_EndGroup ();
 }
 
 /*
@@ -465,18 +490,85 @@ static qboolean R_Alias_CanAddToBatch (const entity_t *e)
 	return true;
 }
 
+static void R_ExtractPosePosition (const bonepose_t *pose, vec3_t out)
+{
+	out[0] = pose->mat[3];
+	out[1] = pose->mat[7];
+	out[2] = pose->mat[11];
+}
+
+static void R_GetBonePosition (const bonepose_t *root, const bonepose_t *bindpose, const bonepose_t *animpose, vec3_t out)
+{
+	vec3_t base, anim;
+	R_ExtractPosePosition (bindpose, base);
+	Matrix3x4_RM_Transform3 (animpose->mat, base, anim);
+	Matrix3x4_RM_Transform3 (root->mat, anim, out);
+}
+
+static void R_GetLerpedBonePosition (const bonepose_t *root, const bonepose_t *bindpose, const bonepose_t *frame1, const bonepose_t *frame2, float t, vec3_t out)
+{
+	vec3_t pos1, pos2;
+	R_GetBonePosition (root, bindpose, frame1, pos1);
+	R_GetBonePosition (root, bindpose, frame2, pos2);
+	VectorLerp (pos1, pos2, t, out); 
+}
+
+static void R_DrawSkeleton (const aliashdr_t *paliashdr, const float model_matrix[16], const lerpdata_t *lerpdata)
+{
+	bonepose_t root;
+	const bonepose_t *bindpose;
+	const bonepose_t *animdata;
+	const bonepose_t *frame1, *frame2;
+	const boneinfo_t *boneinfo;
+	vec3_t *positions;
+	int i, mark;
+
+	if (paliashdr->poseverttype != PV_IQM)
+		return;
+
+	mark = Hunk_LowMark ();
+	positions = (vec3_t *) Hunk_AllocNoFill (sizeof (*positions) * paliashdr->numbones);
+
+	bindpose = (const bonepose_t *) ((const byte *) paliashdr + paliashdr->bindpose);
+	boneinfo = (const boneinfo_t *) ((const byte *) paliashdr + paliashdr->boneinfo);
+	animdata = (const bonepose_t *) ((const byte *) paliashdr + paliashdr->boneposedata);
+	frame1 = animdata + paliashdr->numbones * lerpdata->pose1;
+	frame2 = animdata + paliashdr->numbones * lerpdata->pose2;
+
+	root.mat[0] = model_matrix[0]; root.mat[1] = model_matrix[4]; root.mat[2] = model_matrix[8]; root.mat[3] = model_matrix[12];
+	root.mat[4] = model_matrix[1]; root.mat[5] = model_matrix[5]; root.mat[6] = model_matrix[9]; root.mat[7] = model_matrix[13];
+	root.mat[8] = model_matrix[2]; root.mat[9] = model_matrix[6]; root.mat[10] = model_matrix[10]; root.mat[11] = model_matrix[14];
+
+	for (i = 0; i < paliashdr->numbones; i++)
+		R_GetLerpedBonePosition (&root, bindpose + i, frame1 + i, frame2 + i, lerpdata->blend, positions[i]);
+
+	for (i = 0; i < paliashdr->numbones; i++)
+	{
+		int parent = boneinfo[i].parent;
+		if (parent < 0)
+			continue;
+		// skip lines starting from root (can get too busy for models with multiple parts, e.g. ogre)
+		if (boneinfo[parent].parent < 0)
+			continue;
+		R_EmitLine (positions[parent], positions[i], 0xFFFF00FFu);
+	}
+
+	Hunk_FreeToLowMark (mark);
+}
+
 /*
 =================
 R_DrawAliasModel_Real
 =================
 */
-static void R_DrawAliasModel_Real (entity_t *e, qboolean showtris)
+static void R_DrawAliasModel_Real (entity_t *e, aliasmode_t mode)
 {
-	aliashdr_t	*paliashdr;
+	aliashdr_t	*paliashdr, *hdr;
 	lerpdata_t	lerpdata;
 	float		fovscale = 1.0f;
 	float		model_matrix[16];
 	aliasinstance_t	*instance;
+	int			totalverts;
 
 	//
 	// setup pose/lerp data -- do it first so we don't miss updates due to culling
@@ -529,6 +621,12 @@ static void R_DrawAliasModel_Real (entity_t *e, qboolean showtris)
 	if (entalpha == 0)
 		return;
 
+	if (mode == ALIAS_SHOWSKEL)
+	{
+		R_DrawSkeleton (paliashdr, model_matrix, &lerpdata);
+		return;
+	}
+
 	//
 	// set up lighting
 	//
@@ -539,14 +637,14 @@ static void R_DrawAliasModel_Real (entity_t *e, qboolean showtris)
 	// draw it
 	//
 
-	if (r_fullbright_cheatsafe || showtris)
+	if (r_fullbright_cheatsafe || mode == ALIAS_SHOWTRIS)
 		lightcolor[0] = lightcolor[1] = lightcolor[2] = 0.5f;
 
-	if (showtris)
+	if (mode == ALIAS_SHOWTRIS)
 		entalpha = 1.f;
 
 	if (!R_Alias_CanAddToBatch (e))
-		R_FlushAliasInstances (showtris);
+		R_FlushAliasInstances (mode == ALIAS_SHOWTRIS);
 
 	if (!ibuf.count)
 		ibuf.ent = e;
@@ -563,12 +661,15 @@ static void R_DrawAliasModel_Real (entity_t *e, qboolean showtris)
 	instance->pose2 = lerpdata.pose2;
 	instance->blend = lerpdata.blend;
 
-	if (paliashdr->poseverttype == PV_QUAKE1)
+	for (hdr = paliashdr, totalverts = 0; hdr; hdr = Mod_NextSurface (hdr))
+		totalverts += hdr->numverts_vbo;
+
+	if (paliashdr->poseverttype == PV_QUAKE1 || paliashdr->poseverttype == PV_MD3)
 	{
-		instance->pose1 *= paliashdr->numverts_vbo;
-		instance->pose2 *= paliashdr->numverts_vbo;
+		instance->pose1 *= totalverts;
+		instance->pose2 *= totalverts;
 	}
-	else
+	else if (paliashdr->poseverttype == PV_IQM)
 	{
 		instance->pose1 *= paliashdr->numbones;
 		instance->pose2 *= paliashdr->numbones;
@@ -584,7 +685,7 @@ void R_DrawAliasModels (entity_t **ents, int count)
 {
 	int i;
 	for (i = 0; i < count; i++)
-		R_DrawAliasModel_Real (ents[i], false);
+		R_DrawAliasModel_Real (ents[i], ALIAS_STANDARD);
 	R_FlushAliasInstances (false);
 }
 
@@ -597,6 +698,18 @@ void R_DrawAliasModels_ShowTris (entity_t **ents, int count)
 {
 	int i;
 	for (i = 0; i < count; i++)
-		R_DrawAliasModel_Real (ents[i], true);
+		R_DrawAliasModel_Real (ents[i], ALIAS_SHOWTRIS);
 	R_FlushAliasInstances (true);
+}
+
+/*
+=================
+R_DrawAliasModels_ShowSkel
+=================
+*/
+void R_DrawAliasModels_ShowSkel (entity_t **ents, int count)
+{
+	int i;
+	for (i = 0; i < count; i++)
+		R_DrawAliasModel_Real (ents[i], ALIAS_SHOWSKEL);
 }

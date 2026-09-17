@@ -288,40 +288,40 @@ void VectorLerp (const vec3_t veca, const vec3_t vecb, float frac, vec3_t dst)
 }
 
 
-vec_t _DotProduct (vec3_t v1, vec3_t v2)
+vec_t _DotProduct (const vec3_t v1, const vec3_t v2)
 {
 	return v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
 }
 
-void _VectorSubtract (vec3_t veca, vec3_t vecb, vec3_t out)
+void _VectorSubtract (const vec3_t veca, const vec3_t vecb, vec3_t out)
 {
 	out[0] = veca[0]-vecb[0];
 	out[1] = veca[1]-vecb[1];
 	out[2] = veca[2]-vecb[2];
 }
 
-void _VectorAdd (vec3_t veca, vec3_t vecb, vec3_t out)
+void _VectorAdd (const vec3_t veca, const vec3_t vecb, vec3_t out)
 {
 	out[0] = veca[0]+vecb[0];
 	out[1] = veca[1]+vecb[1];
 	out[2] = veca[2]+vecb[2];
 }
 
-void _VectorCopy (vec3_t in, vec3_t out)
+void _VectorCopy (const vec3_t in, vec3_t out)
 {
 	out[0] = in[0];
 	out[1] = in[1];
 	out[2] = in[2];
 }
 
-void CrossProduct (vec3_t v1, vec3_t v2, vec3_t cross)
+void CrossProduct (const vec3_t v1, const vec3_t v2, vec3_t cross)
 {
 	cross[0] = v1[1]*v2[2] - v1[2]*v2[1];
 	cross[1] = v1[2]*v2[0] - v1[0]*v2[2];
 	cross[2] = v1[0]*v2[1] - v1[1]*v2[0];
 }
 
-vec_t VectorLength(vec3_t v)
+vec_t VectorLength(const vec3_t v)
 {
 	return sqrt(DotProduct(v,v));
 }
@@ -343,6 +343,18 @@ float VectorNormalize (vec3_t v)
 	return length;
 }
 
+float DistanceSquared (const vec3_t a, const vec3_t b)
+{
+	vec3_t ab;
+	VectorSubtract (b, a, ab);
+	return VectorLengthSquared (ab);
+}
+
+float Distance (const vec3_t a, const vec3_t b)
+{
+	return sqrt (DistanceSquared (a, b));
+}
+
 void VectorInverse (vec3_t v)
 {
 	v[0] = -v[0];
@@ -350,7 +362,7 @@ void VectorInverse (vec3_t v)
 	v[2] = -v[2];
 }
 
-void VectorScale (vec3_t in, vec_t scale, vec3_t out)
+void VectorScale (const vec3_t in, vec_t scale, vec3_t out)
 {
 	out[0] = in[0]*scale;
 	out[1] = in[1]*scale;
@@ -542,6 +554,19 @@ void R_ConcatTransforms (float in1[3][4], float in2[3][4], float out[3][4])
 				in1[2][2] * in2[2][3] + in1[2][3];
 }
 
+void Matrix3x4_RM_Transform4(const float *matrix, const float *vector, float *product)
+{
+	product[0] = matrix[0]*vector[0] + matrix[1]*vector[1] + matrix[2]*vector[2] + matrix[3]*vector[3];
+	product[1] = matrix[4]*vector[0] + matrix[5]*vector[1] + matrix[6]*vector[2] + matrix[7]*vector[3];
+	product[2] = matrix[8]*vector[0] + matrix[9]*vector[1] + matrix[10]*vector[2] + matrix[11]*vector[3];
+}
+
+void Matrix3x4_RM_Transform3(const float *matrix, const float *vector, float *product)
+{
+	product[0] = matrix[0]*vector[0] + matrix[1]*vector[1] + matrix[2]*vector[2] + matrix[3];
+	product[1] = matrix[4]*vector[0] + matrix[5]*vector[1] + matrix[6]*vector[2] + matrix[7];
+	product[2] = matrix[8]*vector[0] + matrix[9]*vector[1] + matrix[10]*vector[2] + matrix[11];
+}
 
 /*
 ===================

@@ -57,12 +57,12 @@ typedef enum {
 	CANVAS_DEFAULT,
 	CANVAS_CONSOLE,
 	CANVAS_MENU,
+	CANVAS_INFO,
 	CANVAS_SBAR,
 	CANVAS_SBAR_QW_INV,
 	CANVAS_SBAR2,
 	CANVAS_CROSSHAIR,
 	CANVAS_BOTTOMLEFT,
-	CANVAS_BOTTOMRIGHT,
 	CANVAS_TOPRIGHT,
 	CANVAS_CSQC,
 	CANVAS_INVALID = -1
@@ -105,8 +105,9 @@ extern	cvar_t		scr_conwidth;
 extern	cvar_t		scr_conscale;
 extern	cvar_t		scr_conalpha;
 extern	cvar_t		scr_conbrightness;
-extern	cvar_t		scr_scale;
 extern	cvar_t		scr_crosshairscale;
+extern	cvar_t		scr_infoscale;
+extern	cvar_t		scr_usekfont;
 //johnfitz
 
 typedef enum hudstyle_t

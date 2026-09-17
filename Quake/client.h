@@ -300,6 +300,7 @@ extern	cvar_t	m_forward;
 extern	cvar_t	m_side;
 
 extern	cvar_t	cl_startdemos;
+extern	cvar_t	cl_startmenu;
 extern	cvar_t	cl_confirmquit;
 
 

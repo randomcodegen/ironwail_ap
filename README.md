@@ -73,6 +73,8 @@ The messages have a 2 second cooldown so the player doesn't get spammed.
 
 # Original Ironwail Readme:
 
+<a href="https://github.com/andrei-drexler/ironwail/releases/latest">![GitHub Release](https://img.shields.io/github/v/release/andrei-drexler/ironwail?display_name=release&style=for-the-badge&label=Download)</a>
+
 # What's this?
 A fork of the popular GLQuake descendant [QuakeSpasm](https://sourceforge.net/projects/quakespasm/) with a focus on high performance instead of maximum compatibility, with a few extra features sprinkled on top.
 

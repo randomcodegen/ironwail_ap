@@ -301,6 +301,10 @@ typedef struct
 } stringview_t;
 
 qboolean COM_ParseLine (const char **str, stringview_t *line);
+qboolean COM_ParseMutableLine (char **str, char **line);
+int COM_WordLength (const char *text);
+int COM_AdvanceLineWrapped (const char **text, int maxchars);
+void COM_WordWrap (char *dst, const char *src, size_t dstsize, int maxcols);
 
 extern	int			com_argc;
 extern	const char	**com_argv;
@@ -349,6 +353,7 @@ unsigned COM_HashBlock (const void *data, size_t size);
 
 // localization support for 2021 rerelease version:
 void LOC_Init (void);
+void LOC_Load (void);
 void LOC_Shutdown (void);
 const char* LOC_GetRawString (const char *key);
 const char* LOC_GetString (const char *key);
@@ -478,9 +483,7 @@ long FS_filelength (fshandle_t *fh);
 
 
 extern struct cvar_s	registered;
-extern qboolean		standard_quake, rogue, hipnotic;
-extern qboolean		fitzmode;
-	/* if true, run in fitzquake mode disabling custom quakespasm hacks */
+extern qboolean		standard_quake, rogue, hipnotic, mg3;
 
 #endif	/* _Q_COMMON_H */
 

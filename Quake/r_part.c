@@ -188,59 +188,6 @@ void R_ClearParticles (void)
 
 /*
 ===============
-R_ReadPointFile_f
-===============
-*/
-void R_ReadPointFile_f (void)
-{
-	FILE	*f;
-	vec3_t	org;
-	int		r;
-	int		c;
-	particle_t	*p;
-	char	name[MAX_QPATH];
-
-	if (cls.state != ca_connected)
-		return;			// need an active map.
-
-	q_snprintf (name, sizeof(name), "maps/%s.pts", cl.mapname);
-
-	COM_FOpenFile (name, &f, NULL);
-	if (!f)
-	{
-		Con_Printf ("couldn't open %s\n", name);
-		return;
-	}
-
-	Con_Printf ("Reading %s...\n", name);
-	c = 0;
-	org[0] = org[1] = org[2] = 0; // silence pesky compiler warnings
-	for ( ;; )
-	{
-		r = fscanf (f,"%f %f %f\n", &org[0], &org[1], &org[2]);
-		if (r != 3)
-			break;
-		c++;
-
-		if (!(p = R_AllocParticle ()))
-		{
-			Con_Printf ("Not enough free particles\n");
-			break;
-		}
-
-		p->die = 99999;
-		p->color = (-c)&15;
-		p->type = pt_static;
-		VectorCopy (vec3_origin, p->vel);
-		VectorCopy (org, p->org);
-	}
-
-	fclose (f);
-	Con_Printf ("%i points read\n", c);
-}
-
-/*
-===============
 R_ParseParticleEffect
 
 Parse an effect out of the server message

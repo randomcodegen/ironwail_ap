@@ -52,6 +52,10 @@ static cvar_t in_debugkeys = {"in_debugkeys", "0", CVAR_NONE};
 #include <IOKit/hidsystem/event_status_driver.h>
 #endif
 
+// the gamepad alt modifier button is pressed
+// => K_x_BTN turns into K_x_BTN_ALT
+qboolean joy_altmodifier_pressed = false;
+
 // SDL2 Game Controller cvars
 cvar_t	joy_deadzone_look = { "joy_deadzone_look", "0.175", CVAR_ARCHIVE };
 cvar_t	joy_deadzone_move = { "joy_deadzone_move", "0.175", CVAR_ARCHIVE };
@@ -69,6 +73,7 @@ cvar_t	joy_flick_time = { "joy_flick_time", "0.125", CVAR_ARCHIVE };
 cvar_t	joy_flick_recenter = { "joy_flick_recenter", "0.0", CVAR_ARCHIVE };
 cvar_t	joy_flick_deadzone = { "joy_flick_deadzone", "0.9", CVAR_ARCHIVE };
 cvar_t	joy_flick_noise_thresh = { "joy_flick_noise_thresh", "2.0", CVAR_ARCHIVE };
+cvar_t	joy_flick_adjust_speed = { "joy_flick_adjust_speed", "30.0", CVAR_ARCHIVE };
 cvar_t	joy_rumble = { "joy_rumble", "0.3", CVAR_ARCHIVE };
 cvar_t	joy_device = { "joy_device", "0", CVAR_ARCHIVE };
 cvar_t	joy_always_active = { "joy_always_active", "0", CVAR_ARCHIVE };
@@ -121,6 +126,7 @@ static struct
 {
 	float	yaw;
 	float	pitch;
+	float	yaw_delta;
 	float	prev_lerp_frac;
 	float	prev_angle;
 	float	prev_scale;
@@ -332,6 +338,10 @@ static qboolean IN_UseController (int device_index)
 #if SDL_VERSION_ATLEAST (2, 0, 9)
 		if (joy_has_rumble)
 			SDL_GameControllerRumble (joy_active_controller, 0, 0, 100);
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+		if (SDL_GameControllerHasLED (joy_active_controller))
+			SDL_GameControllerSetLED (joy_active_controller, 0, 0, 0);
+#endif // SDL_VERSION_ATLEAST (2, 0, 14)
 #endif // SDL_VERSION_ATLEAST (2, 0, 9)
 		SDL_GameControllerClose (joy_active_controller);
 
@@ -464,33 +474,64 @@ static qboolean IN_RemapJoystick (void)
 
 void IN_StartupJoystick (void)
 {
-	int i;
-	int nummappings;
-	char controllerdb[MAX_OSPATH];
-	
-	if (COM_CheckParm("-nojoy"))
-		return;
+    int i;
+    int nummappings;
+    char controllerdb[MAX_OSPATH];
 
-	if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) == -1 )
-	{
-		Con_Warning("could not initialize SDL Game Controller\n");
-		return;
-	}
+    if (COM_CheckParm("-nojoy"))
+        return;
 
-	// Load additional SDL2 controller definitions from gamecontrollerdb.txt
-	for (i = 0; i < com_numbasedirs; i++)
-	{
-		q_snprintf (controllerdb, sizeof(controllerdb), "%s/gamecontrollerdb.txt", com_basedirs[i]);
-		nummappings = SDL_GameControllerAddMappingsFromFile(controllerdb);
-		if (nummappings > 0)
-			Con_Printf("%d mappings loaded from gamecontrollerdb.txt\n", nummappings);
-	}
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_GAMECUBE, "1");
+#endif
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_PS5, "1");
+#endif
+#if SDL_VERSION_ATLEAST(2, 0, 22)
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI, "1");
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_SWITCH, "1");
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_JOY_CONS, "1");
 
-	IN_SetupJoystick ();
+	// Enable rumble and motion sensors for PS4 and PS5 controllers while uder Bluetooth connectivitiy
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE, "1");
+#endif
+#if SDL_VERSION_ATLEAST(2, 23, 2)
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "1");
+#endif
+#if SDL_VERSION_ATLEAST(2, 25, 1)
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_PS3, "1");
+#endif
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+	SDL_SetHint (SDL_HINT_JOYSTICK_HIDAPI_WII, "1");
+#endif
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+	SDL_SetHint (SDL_HINT_JOYSTICK_RAWINPUT, "1");
+	SDL_SetHint (SDL_HINT_JOYSTICK_RAWINPUT_CORRELATE_XINPUT, "1");
+#endif
+
+    if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) == -1)
+    {
+        Con_Warning("could not initialize SDL Game Controller\n");
+        return;
+    }
+
+    // Load additional SDL2 controller definitions from gamecontrollerdb.txt
+    for (i = 0; i < com_numbasedirs; i++)
+    {
+        q_snprintf(controllerdb, sizeof(controllerdb), "%s/gamecontrollerdb.txt", com_basedirs[i]);
+        nummappings = SDL_GameControllerAddMappingsFromFile(controllerdb);
+        if (nummappings > 0)
+            Con_Printf("%d mappings loaded from gamecontrollerdb.txt\n", nummappings);
+    }
+
+    IN_SetupJoystick();
 }
 
 void IN_ShutdownJoystick (void)
 {
+	IN_UseController (-1);
 	SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
 }
 
@@ -543,6 +584,16 @@ void IN_GyroActionDown (void)
 void IN_GyroActionUp (void)
 {
 	gyro_button_pressed = false;
+}
+
+static void IN_JoyAltModifierDown (void)
+{
+	joy_altmodifier_pressed = true;
+}
+
+static void IN_JoyAltModifierUp (void)
+{
+	joy_altmodifier_pressed = false;
 }
 
 /*
@@ -646,6 +697,7 @@ void IN_Init (void)
 	Cvar_RegisterVariable(&joy_flick_recenter);
 	Cvar_RegisterVariable(&joy_flick_deadzone);
 	Cvar_RegisterVariable(&joy_flick_noise_thresh);
+	Cvar_RegisterVariable(&joy_flick_adjust_speed);
 	Cvar_RegisterVariable(&joy_rumble);
 	Cvar_RegisterVariable(&joy_device);
 	Cvar_SetCallback(&joy_device, Joy_Device_f);
@@ -666,6 +718,8 @@ void IN_Init (void)
 
 	Cmd_AddCommand ("+gyroaction", IN_GyroActionDown);
 	Cmd_AddCommand ("-gyroaction", IN_GyroActionUp);
+	Cmd_AddCommand ("+altmodifier", IN_JoyAltModifierDown);
+	Cmd_AddCommand ("-altmodifier", IN_JoyAltModifierUp);
 
 	IN_Activate();
 	IN_StartupJoystick();
@@ -1094,7 +1148,18 @@ void IN_JoyMove (usercmd_t *cmd)
 					angle = NormalizeAngle (flick.prev_angle + delta);
 				}
 			}
+			flick.yaw_delta += delta;
+		}
+
+		// apply yaw adjustment
+		if (joy_flick_adjust_speed.value > 0.f)
+			delta = flick.yaw_delta * q_min (1.0, host_rawframetime * joy_flick_adjust_speed.value);
+		else
+			delta = flick.yaw_delta;
+		if (fabs (delta) > 0.01)
+		{
 			cl.viewangles[YAW] -= delta;
+			flick.yaw_delta -= delta;
 		}
 
 		// advance angle animation
@@ -1105,6 +1170,7 @@ void IN_JoyMove (usercmd_t *cmd)
 		}
 		else
 			lerp_frac = 1.f;
+
 		delta = IN_FlickStickEasing (lerp_frac) - IN_FlickStickEasing (flick.prev_lerp_frac);
 		cl.viewangles[YAW] -= flick.yaw * delta;
 		cl.viewangles[PITCH] -= flick.pitch * delta * CLAMP (0.f, joy_flick_recenter.value, 1.f);

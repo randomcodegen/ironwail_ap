@@ -1115,9 +1115,9 @@ static void UpdateWindowTitle (void)
 		VID_SetWindowTitle (title);
 
 		if (current.stats.max_players > 1)
-			Steam_SetStatus_Multiplayer (current.stats.players, current.stats.max_players, utf8name);
+			Steam_SetStatus_Multiplayer (current.stats.players, current.stats.max_players, utf8name[0] ? utf8name : current.map);
 		else
-			Steam_SetStatus_SinglePlayer (utf8name);
+			Steam_SetStatus_SinglePlayer (utf8name[0] ? utf8name : current.map);
 	}
 	else
 	{
@@ -1517,6 +1517,8 @@ void Host_Init (void)
 
 	if (cls.state != ca_dedicated)
 	{
+		// 2026 update compat: enable scr_usekfont (for word wrapping) in case mg3 is used with original id1 data.
+		Cvar_SetValueQuick (&scr_usekfont, mg3 ? 1.0f : 0.0f);
 		Cbuf_InsertText ("exec quake.rc\n");
 	// johnfitz -- in case the vid mode was locked during vid_init, we can unlock it now.
 		// note: two leading newlines because the command buffer swallows one of them.
