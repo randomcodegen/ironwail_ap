@@ -1800,6 +1800,27 @@ static const arg_completion_type_t arg_completion_types[] =
 
 static const int num_arg_completion_types = Q_COUNTOF(arg_completion_types);
 
+// AP names are the entire remaining line, including spaces and punctuation.
+static char *Con_APHintArgument (void)
+{
+	char *start = key_lines[edit_line] + 1;
+	char *end = key_lines[edit_line] + key_linepos;
+	char *arg;
+	while (*start == ' ' || *start == '\t')
+		start++;
+	if (!strncmp (start, "!hint_location", 14))
+		arg = start + 14;
+	else if (!strncmp (start, "!hint", 5))
+		arg = start + 5;
+	else
+		return NULL;
+	if (*arg != ' ' && *arg != '\t')
+		return NULL;
+	while (arg < end && (*arg == ' ' || *arg == '\t'))
+		arg++;
+	return arg <= end ? arg : NULL;
+}
+
 /*
 ============
 BuildTabList -- johnfitz
@@ -1816,6 +1837,15 @@ static void BuildTabList (const char *partial)
 
 	bash_partial[0] = 0;
 	bash_singlematch = 1;
+
+	if (Con_APHintArgument ())
+	{
+		const char *start = key_lines[edit_line] + 1;
+		while (*start == ' ' || *start == '\t')
+			start++;
+		ap_complete_hint (partial, !strncmp (start, "!hint_location", 14), Con_AddToTabList);
+		return;
+	}
 
 	ParseCommand ();
 
@@ -1985,6 +2015,8 @@ void Con_TabComplete (tabcomplete_t mode)
 		while (*c!=' ' && *c!='\"' && *c!=';' && c!=key_lines[edit_line])
 			c--;
 		c++; //start 1 char after the separator we just found
+		if (Con_APHintArgument ())
+			c = Con_APHintArgument ();
 	}
 	for (i = 0; c + i < key_lines[edit_line] + key_linepos; i++)
 		partial[i] = c[i];

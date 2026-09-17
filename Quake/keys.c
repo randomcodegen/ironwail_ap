@@ -295,8 +295,11 @@ void Key_Console (int key)
 	case K_KP_ENTER:
 	case K_ABUTTON:
 		key_tabpartial[0] = 0;
-		Cbuf_AddText (workline + 1);	// skip the prompt
-		Cbuf_AddText ("\n");
+		if (!ap_console_command (workline + 1)) // skip the prompt
+		{
+			Cbuf_AddText (workline + 1);
+			Cbuf_AddText ("\n");
+		}
 		Con_Printf ("%s\n", workline);
 
 		// If the last two lines are identical, skip storing this line in history 

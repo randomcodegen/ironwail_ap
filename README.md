@@ -32,6 +32,8 @@ Excluded pickups obey the map's difficulty and multiplayer spawn flags.
 
 This requires the updated APWorld and engine, and a newly generated seed. Older seeds default to all types disabled. Loading an existing save restores its saved entities.
 
+The console sends lines starting with `!` to the AP server (for example, `!help`, `!hint Rocketlauncher`, or `!hint_location e1m1 Green Armor (1)`). Press Tab after `!hint ` to complete item names, or after `!hint_location ` to complete location names. Names with spaces do not need quotes; repeated Tab / Shift+Tab cycles matches.
+
 ## New cvars:
 If set to 0, the HUD element only shows up when the scoreboard is open (tab by default).
 |CVAR|Description|

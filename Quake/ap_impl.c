@@ -19,6 +19,48 @@ json_t* ap_config = NULL;
 json_t* ap_connect_info = NULL;
 json_t* ap_game_config = NULL;
 
+bool ap_console_command (char* text)
+{
+	while (*text == ' ' || *text == '\t')
+		text++;
+	if (*text != '!')
+		return false;
+	if (ap_global_state == AP_UNINIT || AP_GetConnectionStatus () != Connected)
+		ap_printf ("Not connected to an AP server.\n");
+	else
+		AP_SendMsg (text);
+	return true;
+}
+
+void ap_complete_hint (const char* partial, bool locations,
+	void (*add) (const char* name, const char* partial, const char* type))
+{
+	const char *key, *category, *id, *name;
+	json_t *value, *group, *location;
+	if (!locations)
+	{
+		json_object_foreach (json_object_get (ap_game_config, "items"), key, value)
+		{
+			name = json_string_value (json_object_get (value, "name"));
+			if (name)
+				add (name, partial, NULL);
+		}
+		return;
+	}
+	json_object_foreach (json_object_get (ap_game_config, "locations"), key, value)
+		json_object_foreach (value, category, group)
+			json_object_foreach (group, id, location)
+			{
+				name = json_string_value (json_object_get (location, "name"));
+				if (name)
+				{
+					char* full_name = g_strdup_printf ("%s %s", key, name);
+					add (full_name, partial, NULL);
+					g_free (full_name);
+				}
+			}
+}
+
 // ap debug vars
 int ap_debug_dive = 0;
 int ap_debug_jump = 0;

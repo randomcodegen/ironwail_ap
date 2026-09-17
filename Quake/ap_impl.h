@@ -256,6 +256,9 @@ char* extract_bracketed_part (const char* str);
 void ap_free_message_parts_array (char** parts);
 
 // lib passthrough
+bool ap_console_command (char* text);
+void ap_complete_hint (const char* partial, bool locations,
+	void (*add) (const char* name, const char* partial, const char* type));
 void AP_SendMsg (char*);
 void AP_SetDeathLinkSupported (bool);
 bool AP_DeathLinkPending ();
